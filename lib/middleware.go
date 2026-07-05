@@ -9,12 +9,12 @@ import (
 
 type AccessLog struct {
 	Time        time.Time         `json:"time"`
-	Endpoint    string            `json:"endpoint"`
-	IPAddr      string            `json:"ip_addr"`
-	RequestType string            `json:"request_type"`
+	Endpoint    string            `gorm:"type:varchar" json:"endpoint"`
+	IPAddr      string            `gorm:"type:varchar" json:"ip_addr"`
+	RequestType string            `gorm:"type:varchar" json:"request_type"`
 	StatusCode  int               `json:"status_code"`
 	ProcessTime float32           `json:"process_time"`
-	RequestBody map[string]string `gorm:"serializer:json" json:"request_body"`
+	RequestBody map[string]string `gorm:"serializer:json;type:varchar" json:"request_body"`
 }
 
 func AccessLogMiddlewareHandler(c fiber.Ctx) error {
@@ -48,4 +48,12 @@ func AccessLogMiddlewareHandler(c fiber.Ctx) error {
 
 func AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 	return c.Next()
+}
+
+func NotFoundMiddlewareHandler(c fiber.Ctx) error {
+	return c.Status(fiber.StatusNotFound).SendString("Not Found")
+}
+
+func NotImplementedMiddlewareHandler(c fiber.Ctx) error {
+	return c.Status(fiber.StatusNotImplemented).SendString("Not Implemented")
 }
