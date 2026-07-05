@@ -1,47 +1,120 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
+	"github.com/alifiroozi80/duckdb"
+	swaggo "github.com/gofiber/contrib/v3/swaggo"
 	"github.com/gofiber/fiber/v3"
+	"github.com/toyama-pj/simple-kvs-registory/handlers"
 	"github.com/toyama-pj/simple-kvs-registory/lib"
+	"gorm.io/gorm"
+
+	_ "github.com/toyama-pj/simple-kvs-registory/docs"
 )
 
+// @title			Simple KVS Registry API
+// @version			0.0.1
+// @BasePath		/api/v1
 func main() {
+	// Configuration
+	config, err := lib.ReadConfig(".env", true)
+	if err != nil {
+		panic(fmt.Sprintf("failed to read config: %s", err))
+	}
+
+	// DB Connection
+	var dialect gorm.Dialector
+	if config.DATABASE_PROVIDER == "duckdb" {
+		dialect = duckdb.Open(config.DATABASE_DSN)
+	} else {
+		panic("unsupported database provider")
+	}
+
+	// DB Migration
+	db, err := gorm.Open(dialect, &gorm.Config{})
+	if err != nil {
+		panic(fmt.Sprintf("failed to connect to DB: %s", err))
+	}
+
+	err = db.AutoMigrate(
+		&lib.Data{},
+		&lib.AccessLog{},
+		&lib.User{},
+		&lib.UserOneTimeLogin{},
+		&lib.UserBearerToken{},
+	)
+	if err != nil {
+		panic(fmt.Sprintf("failed to migrate db: %s", err))
+	}
+
+	// Database Instance
+	con := handlers.NewController(db, config)
+
+	if config.DEVELOPMENT == true {
+		cont := lib.NewController(db, config)
+		log.Println("Create Sample User: i@example.com")
+		_, err := cont.GetUserByMailAddress("i@example.com")
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			err := cont.CreateUser("Test User", "i@example.com")
+			if err != nil {
+				panic(fmt.Sprintf("failed to create sample user: %s", err))
+			}
+		} else if err != nil {
+			panic(fmt.Sprintf("failed to create sample user: %s", err))
+		}
+	}
+
+	// Web API
 	app := fiber.New()
 
-	app.Use(
-		func(c fiber.Ctx) {
-			err := lib.AccessLogMiddlewareHandler(c)
-			if err != nil {
-				log.Fatal(err)
-			}
-		})
+	app.Get("/docs/*", swaggo.HandlerDefault)
 
-	app.Use(
-		func(c fiber.Ctx) {
-			err := lib.AuthenticationMiddlewareHandler(c)
-			if err != nil {
-				log.Fatal(err)
-				c.Status(fiber.StatusUnauthorized).SendString("Authorization Failed.")
-			}
-		})
+	app.Use(lib.AccessLogMiddlewareHandler)
+	app.Use(lib.AuthenticationMiddlewareHandler)
 
-	app.Get("/*", func(c fiber.Ctx) error {
-		return c.SendString(c.Path())
+	v1 := app.Group("/api/v1")
+
+	v1.Get("/", func(c fiber.Ctx) error {
+		return c.SendString("ok!")
 	})
 
-	app.Post("/*", func(c fiber.Ctx) error {
-		return c.SendString("Post Received: " + c.Path())
-	})
+	v1.Route("/auth/", con.AuthHandlersSetup)
+	v1.Get("/web/*", lib.NotImplementedMiddlewareHandler)
+	v1.Get("/data/info/{namespace}", lib.NotImplementedMiddlewareHandler)
+	v1.Get("/data/{namespace}", lib.NotImplementedMiddlewareHandler)
 
-	log.Fatal(app.Listen(":3000"))
+	app.Use(lib.NotFoundMiddlewareHandler)
 
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-sigChan
+		log.Println("Receive Shutdown Signal...")
+
+		if err := app.Shutdown(); err != nil {
+			log.Printf("Fiber shutdown failed: %s", err)
+		}
+		sqlDB, err := db.DB()
+		if err == nil {
+			if err := sqlDB.Close(); err != nil {
+				log.Printf("DB close failed: %s", err)
+			} else {
+				log.Println("Close Database with Write Ahead Logs")
+			}
+		}
+
+		os.Exit(0)
+	}()
+
+	addr := fmt.Sprintf("%s:%d", config.WEB_HOSTNAME, config.WEB_PORT)
+	if err := app.Listen(addr); err != nil {
+		log.Printf("Server stopped: %s", err)
+	}
 }
-
-// ダミーの保存関数 (ここにGORMの `db.Create(&log)` などを書く)
-/*func saveToDatabase(logData AccessLog) {
-	// 確認用にJSON化してコンソールに出力
-	b, _ := json.MarshalIndent(logData, "", "  ")
-	fmt.Println(string(b))
-}*/
