@@ -101,6 +101,12 @@ func main() {
 		if err := app.Shutdown(); err != nil {
 			log.Printf("Fiber shutdown failed: %s", err)
 		}
+
+		log.Println("Flushing WAL to database...")
+		if err := db.Exec("CHECKPOINT;").Error; err != nil {
+			log.Printf("DuckDB checkpoint failed: %s", err)
+		}
+
 		sqlDB, err := db.DB()
 		if err == nil {
 			if err := sqlDB.Close(); err != nil {
