@@ -82,7 +82,6 @@ func main() {
 	app.Get("/docs/*", swaggo.HandlerDefault)
 
 	app.Use(lib.AccessLogMiddlewareHandler)
-	app.Use(lib.AuthenticationMiddlewareHandler)
 
 	v1 := app.Group("/api/v1")
 
