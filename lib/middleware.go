@@ -2,6 +2,7 @@ package lib
 
 import (
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -46,7 +47,61 @@ func AccessLogMiddlewareHandler(c fiber.Ctx) error {
 	return err
 }
 
-func AuthenticationMiddlewareHandler(c fiber.Ctx) error {
+func (con Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
+	authHeader := c.Get("Authorization")
+	if authHeader == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(
+			NewRFCUnauthorizedErrorResponse(
+				"authorization header is not set.",
+				c.Path(),
+			),
+		)
+	}
+
+	if !strings.HasPrefix(authHeader, "Bearer ") {
+		return c.Status(fiber.StatusUnauthorized).JSON(
+			NewRFCUnauthorizedErrorResponse(
+				"invalid authorization header format.",
+				c.Path(),
+			),
+		)
+	}
+
+	tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+	if tokenString == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(
+			NewRFCUnauthorizedErrorResponse(
+				"authorization header is empty.",
+				c.Path(),
+			),
+		)
+	}
+
+	var tokenRecord UserBearerToken
+	err := con.DB.Where("token = ?", tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&tokenRecord).Error
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(
+			NewRFCUnauthorizedErrorResponse(
+				"invalid authorization token.",
+				c.Path(),
+			),
+		)
+	}
+
+	tokenRecord.ExpiresAt = time.Now().Add(time.Hour * 24)
+	err = con.DB.Save(&tokenRecord).Error
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(
+			NewRFCErrorResponse(
+				fiber.StatusInternalServerError,
+				"err/login/database_error_update_token",
+				"failed to update authorization token.",
+				c.Path(),
+			),
+		)
+	}
+
+	c.Locals("userID", tokenRecord.UserID)
 	return c.Next()
 }
 

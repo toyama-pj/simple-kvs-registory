@@ -1,6 +1,10 @@
 package lib
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"github.com/gofiber/fiber/v3"
+)
 
 type RFCErrorResponse struct {
 	// RFC 7807 に準拠した API エラーレスポンスを返却するための構造体
@@ -27,9 +31,18 @@ func NewRFCErrorResponse(status int, title, detail, instance string) RFCErrorRes
 	}
 }
 
+func NewRFCUnauthorizedErrorResponse(detail string, instance string) RFCErrorResponse {
+	return NewRFCErrorResponse(
+		fiber.StatusUnauthorized,
+		"err/login/unauthorized",
+		detail,
+		instance,
+	)
+}
+
 func NewRFCNotImplementErrorResponse(instance string) RFCErrorResponse {
 	return NewRFCErrorResponse(
-		501,
+		fiber.StatusNotImplemented,
 		"err/login/not_implemented",
 		"This feature is not implemented",
 		instance,
