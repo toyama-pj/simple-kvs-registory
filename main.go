@@ -46,10 +46,10 @@ func main() {
 		log.Println("Database tables not found. Running AutoMigrate...")
 		err = db.AutoMigrate(
 			&lib.Data{},
-			&lib.AccessLog{},
 			&lib.User{},
 			&lib.UserOneTimeLogin{},
 			&lib.UserBearerToken{},
+			&handlers.AccessLog{},
 		)
 		if err != nil {
 			panic(fmt.Sprintf("failed to migrate db: %s", err))
@@ -81,7 +81,7 @@ func main() {
 
 	app.Get("/docs/*", swaggo.HandlerDefault)
 
-	app.Use(lib.AccessLogMiddlewareHandler)
+	app.Use(handlers.AccessLogMiddlewareHandler)
 
 	v1 := app.Group("/api/v1")
 
@@ -90,11 +90,11 @@ func main() {
 	})
 
 	v1.Route("/auth/", con.AuthHandlersSetup)
-	v1.Get("/web/*", lib.NotImplementedMiddlewareHandler)
-	v1.Get("/data/info/{namespace}", lib.NotImplementedMiddlewareHandler)
-	v1.Get("/data/{namespace}", lib.NotImplementedMiddlewareHandler)
+	v1.Get("/web/*", handlers.NotImplementedMiddlewareHandler)
+	v1.Get("/data/info/{namespace}", handlers.NotImplementedMiddlewareHandler)
+	v1.Get("/data/{namespace}", handlers.NotImplementedMiddlewareHandler)
 
-	app.Use(lib.NotFoundMiddlewareHandler)
+	app.Use(handlers.NotFoundMiddlewareHandler)
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
