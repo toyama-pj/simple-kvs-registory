@@ -42,15 +42,21 @@ func main() {
 		panic(fmt.Sprintf("failed to connect to DB: %s", err))
 	}
 
-	err = db.AutoMigrate(
-		&lib.Data{},
-		&lib.AccessLog{},
-		&lib.User{},
-		&lib.UserOneTimeLogin{},
-		&lib.UserBearerToken{},
-	)
-	if err != nil {
-		panic(fmt.Sprintf("failed to migrate db: %s", err))
+	if !db.Migrator().HasTable(&lib.User{}) {
+		log.Println("Database tables not found. Running AutoMigrate...")
+		err = db.AutoMigrate(
+			&lib.Data{},
+			&lib.AccessLog{},
+			&lib.User{},
+			&lib.UserOneTimeLogin{},
+			&lib.UserBearerToken{},
+		)
+		if err != nil {
+			panic(fmt.Sprintf("failed to migrate db: %s", err))
+		}
+		log.Println("Database migration completed successfully.")
+	} else {
+		log.Println("Database tables already exist. Skipping AutoMigrate for stability.")
 	}
 
 	// Database Instance
