@@ -9,7 +9,7 @@ import (
 
 type Data struct {
 	ID        uuid.UUID `gorm:"primaryKey;type:uuid;column:id"`
-	Time      time.Time `gorm:"type:timetz;column:time"`
+	Time      time.Time `gorm:"type:timestamptz;column:time"`
 	Namespace string    `gorm:"type:varchar;column:namespace"`
 	Key       string    `gorm:"type:varchar;column:key"`
 	Value     string    `gorm:"column:value"`

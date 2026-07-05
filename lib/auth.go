@@ -19,8 +19,8 @@ type User struct {
 	ID        uuid.UUID `gorm:"primaryKey;type:uuid;column:id"`
 	Name      string    `gorm:"type:varchar;column:name"`
 	Email     string    `gorm:"type:varchar;column:email;uniqueIndex"`
-	CreatedAt time.Time `gorm:"type:timetz;column:created_at"`
-	UpdatedAt time.Time `gorm:"type:timetz;column:updated_at"`
+	CreatedAt time.Time `gorm:"type:timestamptz;column:created_at"`
+	UpdatedAt time.Time `gorm:"type:timestamptz;column:updated_at"`
 	DeletedAt gorm.DeletedAt
 }
 
@@ -28,17 +28,17 @@ type UserOneTimeLogin struct {
 	ID        int       `gorm:"primaryKey;column:id;autoIncrement"`
 	UserID    uuid.UUID `gorm:"column:user_id"`
 	Token     string    `gorm:"type:varchar;column:token"`
-	CreatedAt time.Time `gorm:"type:timetz;column:created_at"`
-	ExpiresAt time.Time `gorm:"type:timetz;column:expires_at"`
+	CreatedAt time.Time `gorm:"type:timestamptz;column:created_at"`
+	ExpiresAt time.Time `gorm:"type:timestamptz;column:expires_at"`
 }
 
 type UserBearerToken struct {
-	ID        int       `gorm:"primaryKey;column:id;autoIncrement"`
-	UserID    uuid.UUID `gorm:"column:user_id"`
-	Token     string    `gorm:"type:varchar;column:token"`
-	CreatedAt time.Time `gorm:"type:timetz;column:created_at"`
-	UpdatedAt time.Time `gorm:"type:timetz;column:updated_at"`
-	ExpiresAt time.Time `gorm:"type:timetz;column:expires_at"`
+	ID        int       `gorm:"primaryKey;column:id;autoIncrement" json:"id"`
+	UserID    uuid.UUID `gorm:"column:user_id" json:"user_id"`
+	Token     string    `gorm:"type:varchar;column:token" json:"token"`
+	CreatedAt time.Time `gorm:"type:timestamptz;column:created_at" json:"created_at"`
+	UpdatedAt time.Time `gorm:"type:timestamptz;column:updated_at" json:"updated_at"`
+	ExpiresAt time.Time `gorm:"type:timestamptz;column:expires_at" json:"expires_at"`
 	DeletedAt gorm.DeletedAt
 }
 
@@ -46,7 +46,7 @@ type NamespaceAccessPermission struct {
 	NamespaceID uuid.UUID `gorm:"primaryKey;type:uuid;column:namespace_id"`
 	UserID      uuid.UUID `gorm:"primaryKey;type:uuid;column:user_id"`
 	GrantType   string    `gorm:"column:grant_type"` // r, w, rw, admin
-	CreatedAt   time.Time `gorm:"type:timetz;column:created_at"`
+	CreatedAt   time.Time `gorm:"type:timestamptz;column:created_at"`
 	DeletedAt   gorm.DeletedAt
 }
 
