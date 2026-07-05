@@ -86,7 +86,7 @@ func createRandomToken(char string, n int) (string, error) {
 	return string(bytes), nil
 }
 
-func (c Controller) CreateUser(name string, email string) error {
+func (c *Controller) CreateUser(name string, email string) error {
 	var userCount int64
 	err := c.DB.Model(&User{}).Where("email = ?", email).Count(&userCount).Error
 	if err != nil {
@@ -105,7 +105,7 @@ func (c Controller) CreateUser(name string, email string) error {
 	return c.DB.Create(&user).Error
 }
 
-func (c Controller) CreateUserOneTimeLoginCode(userID uuid.UUID) (string, error) {
+func (c *Controller) CreateUserOneTimeLoginCode(userID uuid.UUID) (string, error) {
 	var count int64
 	err := c.DB.Model(&User{}).Where("id = ?", userID).Count(&count).Error
 	if err != nil {
@@ -131,7 +131,7 @@ func (c Controller) CreateUserOneTimeLoginCode(userID uuid.UUID) (string, error)
 	return "", ErrUserNotFound
 }
 
-func (c Controller) GetUserOneTimeLoginCode(email string, token string) (User, error) {
+func (c *Controller) GetUserOneTimeLoginCode(email string, token string) (User, error) {
 	var user User
 	err := c.DB.Where("email = ?", email).First(&user).Error
 	if err != nil {
@@ -155,7 +155,7 @@ func (c Controller) GetUserOneTimeLoginCode(email string, token string) (User, e
 	return user, nil
 }
 
-func (c Controller) CreateUserBearerToken(userID uuid.UUID) (UserBearerToken, error) {
+func (c *Controller) CreateUserBearerToken(userID uuid.UUID) (UserBearerToken, error) {
 	var count int64
 	err := c.DB.Model(&User{}).Where("id = ?", userID).Count(&count).Error
 	if err != nil {
@@ -182,7 +182,7 @@ func (c Controller) CreateUserBearerToken(userID uuid.UUID) (UserBearerToken, er
 	return UserBearerToken{}, ErrUserNotFound
 }
 
-func (c Controller) GetUserByMailAddress(email string) (User, error) {
+func (c *Controller) GetUserByMailAddress(email string) (User, error) {
 	var user User
 	err := c.DB.Where("email = ?", email).Where("deleted_at IS NULL").First(&user).Error
 	if err != nil {
@@ -191,7 +191,7 @@ func (c Controller) GetUserByMailAddress(email string) (User, error) {
 	return user, nil
 }
 
-func (c Controller) GetUserByUserBearerToken(token string) (User, error) {
+func (c *Controller) GetUserByUserBearerToken(token string) (User, error) {
 	var bearer UserBearerToken
 	err := c.DB.Where("token = ?", token).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&bearer).Error
 	if err != nil {
@@ -205,7 +205,7 @@ func (c Controller) GetUserByUserBearerToken(token string) (User, error) {
 	return user, nil
 }
 
-func (c Controller) RevokeUserBearerToken(userId string) error {
+func (c *Controller) RevokeUserBearerToken(userId string) error {
 	err := c.DB.Model(&UserBearerToken{}).Where("user_id = ?", userId).Where("expires_at > ?", time.Now()).Update("deleted_at", time.Now()).Error
 	if err != nil {
 		return err
@@ -213,7 +213,7 @@ func (c Controller) RevokeUserBearerToken(userId string) error {
 	return nil
 }
 
-func (c Controller) PermitUserToAccessNamespace(doAsUserId string, targetUserId string, namespaceId string, grantType string) error {
+func (c *Controller) PermitUserToAccessNamespace(doAsUserId string, targetUserId string, namespaceId string, grantType string) error {
 	if grantType != "r" && grantType != "w" && grantType != "rw" && grantType != "admin" && grantType != "none" {
 		return errors.New("invalid grant type")
 	}
@@ -262,7 +262,7 @@ func (c Controller) PermitUserToAccessNamespace(doAsUserId string, targetUserId 
 	return nil
 }
 
-func (c Controller) CheckUserPermissionToAccessNamespace(userId string, namespaceId string) (bool, bool, bool, error) {
+func (c *Controller) CheckUserPermissionToAccessNamespace(userId string, namespaceId string) (bool, bool, bool, error) {
 	// read, write, admin (manage) の順に bool を返す
 	var target NamespaceAccessPermission
 	err := c.DB.Model(&NamespaceAccessPermission{}).Where("namespace_id = ?", namespaceId).Where("user_id = ?", userId).Where("deleted_at IS NULL").First(&target).Error

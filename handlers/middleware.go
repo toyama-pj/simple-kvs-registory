@@ -48,7 +48,7 @@ func AccessLogMiddlewareHandler(c fiber.Ctx) error {
 	return err
 }
 
-func (con Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
+func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
 		return c.Status(fiber.StatusUnauthorized).JSON(
