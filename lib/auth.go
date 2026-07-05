@@ -182,6 +182,15 @@ func (c *Controller) CreateUserBearerToken(userID uuid.UUID) (UserBearerToken, e
 	return UserBearerToken{}, ErrUserNotFound
 }
 
+func (c *Controller) GetUserById(id uuid.UUID) (User, error) {
+	var user User
+	err := c.DB.Where("id = ?", id).Where("deleted_at IS NULL").First(&user).Error
+	if err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
 func (c *Controller) GetUserByMailAddress(email string) (User, error) {
 	var user User
 	err := c.DB.Where("email = ?", email).Where("deleted_at IS NULL").First(&user).Error

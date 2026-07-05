@@ -21,6 +21,9 @@ import (
 // @title			Simple KVS Registry API
 // @version			0.0.1
 // @BasePath		/api/v1
+// @securityDefinitions.apikey	BearerAuth
+// @in	header
+// @name	Authorization
 func main() {
 	// Configuration
 	config, err := lib.ReadConfig(".env", true)
@@ -90,9 +93,12 @@ func main() {
 	})
 
 	v1.Route("/auth/", con.AuthHandlersSetup)
-	v1.Get("/web/*", handlers.NotImplementedMiddlewareHandler)
-	v1.Get("/data/info/{namespace}", handlers.NotImplementedMiddlewareHandler)
-	v1.Get("/data/{namespace}", handlers.NotImplementedMiddlewareHandler)
+	v1.Route("/cfg/", con.CfgHandlersSetup)
+	v1.Get(
+		"/data/{namespace}",
+		con.AuthenticationMiddlewareHandler,
+		handlers.NotImplementedMiddlewareHandler,
+	)
 
 	app.Use(handlers.NotFoundMiddlewareHandler)
 

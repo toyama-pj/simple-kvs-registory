@@ -102,7 +102,7 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 		)
 	}
 
-	c.Locals("userID", tokenRecord.UserID)
+	c.Locals("userId", tokenRecord.UserID)
 	return c.Next()
 }
 
