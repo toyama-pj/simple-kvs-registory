@@ -94,8 +94,9 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(
 			lib.NewRFCErrorResponse(
+				lib.ErrorDatabaseError,
 				fiber.StatusInternalServerError,
-				"err/login/database_error_update_token",
+				"Database Error",
 				"failed to update authorization token.",
 				c.Path(),
 			),

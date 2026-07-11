@@ -47,10 +47,11 @@ type PostLoginOneTimeCodeRequestBody struct {
 func (con *Controller) PostLoginOneTimeCodeHandler(c fiber.Ctx) error {
 	req := new(PostLoginOneTimeCodeRequestBody)
 	if err := c.Bind().All(req); err != nil {
-		return c.Status(400).JSON(
+		return c.Status(fiber.StatusBadRequest).JSON(
 			lib.NewRFCErrorResponse(
-				400,
-				"err/login/invalid_request",
+				lib.ErrorInvalidRequest,
+				fiber.StatusBadRequest,
+				"Invalid Request",
 				"Request is not valid",
 				c.Path(),
 			),
@@ -67,8 +68,9 @@ func (con *Controller) PostLoginOneTimeCodeHandler(c fiber.Ctx) error {
 			if con.Config.DEVELOPMENT == true {
 				return c.Status(fiber.StatusInternalServerError).JSON(
 					lib.NewRFCErrorResponse(
+						lib.ErrorDatabaseError,
 						fiber.StatusInternalServerError,
-						"err/login/database_error_get_user",
+						"Database Error",
 						err.Error(),
 						c.Path(),
 					),
@@ -76,8 +78,9 @@ func (con *Controller) PostLoginOneTimeCodeHandler(c fiber.Ctx) error {
 			}
 			return c.Status(fiber.StatusInternalServerError).JSON(
 				lib.NewRFCErrorResponse(
+					lib.ErrorInternalServerError,
 					fiber.StatusInternalServerError,
-					"err/login/internal_error",
+					"Internal Server Error",
 					"Internal Server Error has occurred. Please retry later.",
 					c.Path(),
 				),
@@ -88,8 +91,9 @@ func (con *Controller) PostLoginOneTimeCodeHandler(c fiber.Ctx) error {
 			if con.Config.DEVELOPMENT == true {
 				return c.Status(fiber.StatusInternalServerError).JSON(
 					lib.NewRFCErrorResponse(
+						lib.ErrorDatabaseError,
 						fiber.StatusInternalServerError,
-						"err/login/database_error_create_token",
+						"Database Error",
 						err.Error(),
 						c.Path(),
 					),
@@ -97,8 +101,9 @@ func (con *Controller) PostLoginOneTimeCodeHandler(c fiber.Ctx) error {
 			}
 			return c.Status(fiber.StatusInternalServerError).JSON(
 				lib.NewRFCErrorResponse(
+					lib.ErrorInternalServerError,
 					fiber.StatusInternalServerError,
-					"err/login/internal_error",
+					"Internal Server Error",
 					"Internal Server Error has occurred. Please retry later.",
 					c.Path(),
 				),
@@ -132,10 +137,11 @@ type PostLoginRequestBody struct {
 func (con *Controller) PostLoginHandler(c fiber.Ctx) error {
 	req := new(PostLoginRequestBody)
 	if err := c.Bind().All(req); err != nil {
-		return c.Status(400).JSON(
+		return c.Status(fiber.StatusBadRequest).JSON(
 			lib.NewRFCErrorResponse(
-				400,
-				"err/login/invalid_request",
+				lib.ErrorInvalidRequest,
+				fiber.StatusBadRequest,
+				"Invalid Request",
 				"Request is not valid",
 				c.Path(),
 			),
@@ -147,8 +153,9 @@ func (con *Controller) PostLoginHandler(c fiber.Ctx) error {
 	if errors.Is(err, lib.ErrInvalidToken) {
 		return c.Status(fiber.StatusUnauthorized).JSON(
 			lib.NewRFCErrorResponse(
+				lib.ErrorAuthTokenError,
 				fiber.StatusUnauthorized,
-				"err/login/invalid_token",
+				"Invalid Token",
 				"Invalid token",
 				c.Path(),
 			),
@@ -157,8 +164,9 @@ func (con *Controller) PostLoginHandler(c fiber.Ctx) error {
 		if con.Config.DEVELOPMENT == true {
 			return c.Status(fiber.StatusInternalServerError).JSON(
 				lib.NewRFCErrorResponse(
+					lib.ErrorDatabaseError,
 					fiber.StatusInternalServerError,
-					"err/login/database_error_get_user",
+					"Database Error",
 					err.Error(),
 					c.Path(),
 				),
@@ -166,8 +174,9 @@ func (con *Controller) PostLoginHandler(c fiber.Ctx) error {
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(
 			lib.NewRFCErrorResponse(
+				lib.ErrorInternalServerError,
 				fiber.StatusInternalServerError,
-				"err/login/internal_error",
+				"Internal Server Error",
 				"Internal Server Error has occurred. Please retry later.",
 				c.Path(),
 			),
@@ -179,8 +188,9 @@ func (con *Controller) PostLoginHandler(c fiber.Ctx) error {
 		if con.Config.DEVELOPMENT == true {
 			return c.Status(fiber.StatusInternalServerError).JSON(
 				lib.NewRFCErrorResponse(
+					lib.ErrorDatabaseError,
 					fiber.StatusInternalServerError,
-					"err/login/database_error_create_token",
+					"Database Error",
 					err.Error(),
 					c.Path(),
 				),
@@ -188,8 +198,9 @@ func (con *Controller) PostLoginHandler(c fiber.Ctx) error {
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(
 			lib.NewRFCErrorResponse(
+				lib.ErrorInternalServerError,
 				fiber.StatusInternalServerError,
-				"err/login/internal_error",
+				"Internal Server Error",
 				"Internal Server Error has occurred. Please retry later.",
 				c.Path(),
 			),

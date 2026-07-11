@@ -16,14 +16,25 @@ type RFCErrorResponse struct {
 }
 
 type ErrorType string
+type StatusType string
 
 const (
-	ErrUnexpected ErrorType = "UNEXPECTED_ERROR"
+	ErrorUnexpected ErrorType = "error/unexpected"
+
+	ErrorCommonUnauthorized   ErrorType = "error/common/unauthorized"
+	ErrorCommonNotFound       ErrorType = "error/common/not_found"
+	ErrorCommonNotImplemented ErrorType = "error/common/not_implemented"
+
+	ErrorInvalidRequest      ErrorType = "error/common/invalid_request"
+	ErrorInternalServerError ErrorType = "error/common/internal_server_error"
+	ErrorDatabaseError       ErrorType = "error/common/database_error"
+
+	ErrorAuthTokenError ErrorType = "error/auth/invalid_token"
 )
 
-func NewRFCErrorResponse(status int, title, detail, instance string) RFCErrorResponse {
+func NewRFCErrorResponse(ErrorType ErrorType, status int, title, detail, instance string) RFCErrorResponse {
 	return RFCErrorResponse{
-		Type:     string(ErrUnexpected),
+		Type:     string(ErrorType),
 		Title:    title,
 		Status:   status,
 		Detail:   detail,
@@ -33,8 +44,9 @@ func NewRFCErrorResponse(status int, title, detail, instance string) RFCErrorRes
 
 func NewRFCUnauthorizedErrorResponse(detail string, instance string) RFCErrorResponse {
 	return NewRFCErrorResponse(
+		ErrorCommonUnauthorized,
 		fiber.StatusUnauthorized,
-		"err/login/unauthorized",
+		"Unauthorized Error",
 		detail,
 		instance,
 	)
@@ -42,8 +54,9 @@ func NewRFCUnauthorizedErrorResponse(detail string, instance string) RFCErrorRes
 
 func NewRFCNotImplementErrorResponse(instance string) RFCErrorResponse {
 	return NewRFCErrorResponse(
+		ErrorCommonNotImplemented,
 		fiber.StatusNotImplemented,
-		"err/login/not_implemented",
+		"Not Implemented Error",
 		"This feature is not implemented",
 		instance,
 	)
