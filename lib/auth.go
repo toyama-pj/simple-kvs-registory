@@ -42,7 +42,20 @@ type UserBearerToken struct {
 	DeletedAt gorm.DeletedAt
 }
 
+type WriteAccessToken struct {
+	ID              int            `gorm:"primaryKey;column:id;autoIncrement" json:"id"`
+	NameSpaceID     uuid.UUID      `gorm:"column:namespace_id" json:"namespace_id"`
+	Token           uuid.UUID      `gorm:"column:token" json:"token"`
+	CreatedAt       time.Time      `gorm:"type:timestamptz;column:created_at" json:"created_at"`
+	CreatedByUserID uuid.UUID      `gorm:"column:created_by_user_id" json:"created_by_user_id"`
+	CreatedBy       User           `gorm:"foreignKey:CreatedByUserID" json:"created_by"`
+	UpdatedAt       time.Time      `gorm:"type:timestamptz;column:updated_at" json:"updated_at"`
+	ExpiresAt       time.Time      `gorm:"type:timestamptz;column:expires_at" json:"expires_at"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-" swaggerignore:"true"`
+}
+
 type NamespaceAccessPermission struct {
+	ID          int       `gorm:"primaryKey;column:id;autoIncrement"`
 	NamespaceID uuid.UUID `gorm:"primaryKey;type:uuid;column:namespace_id"`
 	UserID      uuid.UUID `gorm:"primaryKey;type:uuid;column:user_id"`
 	GrantType   string    `gorm:"column:grant_type"` // r, w, rw, admin
@@ -191,6 +204,20 @@ func (c *Controller) GetUserById(id uuid.UUID) (User, error) {
 	return user, nil
 }
 
+func (c *Controller) ChangeUserNameById(userId uuid.UUID, name string) error {
+	if name == "" {
+		return errors.New("name is required")
+	}
+
+	var user User
+	err := c.DB.Where("id = ?", userId).Where("deleted_at IS NULL").First(&user).Error
+	if err != nil {
+		return err
+	}
+	user.Name = name
+	return c.DB.Save(&user).Error
+}
+
 func (c *Controller) GetUserByMailAddress(email string) (User, error) {
 	var user User
 	err := c.DB.Where("email = ?", email).Where("deleted_at IS NULL").First(&user).Error
@@ -290,4 +317,33 @@ func (c *Controller) CheckUserPermissionToAccessNamespace(userId string, namespa
 	default:
 		return false, false, false, errors.New("invalid grant type")
 	}
+}
+
+type _getCfgMeNamespaceResponse struct {
+	NameSpaceID uuid.UUID `json:"namespace_id"`
+	GrantType   string    `json:"grant_type"`
+}
+
+type GetCfgMeNamespaceResponse []_getCfgMeNamespaceResponse
+
+func (c *Controller) GetAvailableNamespaceList(userId uuid.UUID, offset int) (GetCfgMeNamespaceResponse, error) {
+	var res GetCfgMeNamespaceResponse
+	err := c.DB.Select("namespace_id, grant_type").Where("user_id = ?", userId).Find(&res).Offset(offset).Limit(10).Error
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
+func (c *Controller) CreateNamespace(userId uuid.UUID) (uuid.UUID, error) {
+	namespaceId := uuid.New()
+	err := c.DB.Create(&NamespaceAccessPermission{
+		NamespaceID: namespaceId,
+		UserID:      userId,
+		GrantType:   "admin",
+	}).Error
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return namespaceId, nil
 }
