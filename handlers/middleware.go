@@ -10,22 +10,22 @@ import (
 )
 
 type AccessLog struct {
-	Time        time.Time         `json:"time"`
-	Endpoint    string            `gorm:"type:varchar" json:"endpoint"`
-	IPAddr      string            `gorm:"type:varchar" json:"ip_addr"`
-	RequestType string            `gorm:"type:varchar" json:"request_type"`
-	StatusCode  int               `json:"status_code"`
-	ProcessTime float32           `json:"process_time"`
-	RequestBody map[string]string `gorm:"serializer:json;type:varchar" json:"request_body"`
+	Time        time.Time   `json:"time"`
+	Endpoint    string      `gorm:"type:varchar" json:"endpoint"`
+	IPAddr      string      `gorm:"type:varchar" json:"ip_addr"`
+	RequestType string      `gorm:"type:varchar" json:"request_type"`
+	StatusCode  int         `json:"status_code"`
+	ProcessTime float32     `json:"process_time"`
+	RequestBody interface{} `gorm:"serializer:json;type:varchar" json:"request_body"`
 }
 
 func AccessLogMiddlewareHandler(c fiber.Ctx) error {
 	startTime := time.Now()
 
-	var reqBody map[string]string
+	var reqBody interface{}
 	if c.Method() == fiber.MethodPost || c.Method() == fiber.MethodPut {
 		if err := c.Bind().Body(&reqBody); err != nil {
-			reqBody = make(map[string]string)
+			reqBody = make(map[string]interface{})
 		}
 	}
 	err := c.Next()
@@ -95,8 +95,8 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(
 			lib.NewRFCErrorResponse(
 				lib.ErrorDatabaseError,
-				fiber.StatusInternalServerError,
 				"Database Error",
+				fiber.StatusInternalServerError,
 				"failed to update authorization token.",
 				c.Path(),
 			),

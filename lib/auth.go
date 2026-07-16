@@ -274,9 +274,14 @@ func (c *Controller) PermitUserToAccessNamespace(doAsUserId string, targetUserId
 	err = tx.Error
 
 	if err == gorm.ErrRecordNotFound { // 新規作成
+		nsID, errNs := uuid.Parse(namespaceId)
+		uID, errU := uuid.Parse(targetUserId)
+		if errNs != nil || errU != nil {
+			return errors.New("invalid uuid format")
+		}
 		target = NamespaceAccessPermission{
-			NamespaceID: uuid.MustParse(namespaceId),
-			UserID:      uuid.MustParse(targetUserId),
+			NamespaceID: nsID,
+			UserID:      uID,
 			GrantType:   grantType,
 			CreatedAt:   time.Now(),
 		}
@@ -328,7 +333,7 @@ type GetCfgMeNamespaceResponse []_getCfgMeNamespaceResponse
 
 func (c *Controller) GetAvailableNamespaceList(userId uuid.UUID, offset int) (GetCfgMeNamespaceResponse, error) {
 	var res GetCfgMeNamespaceResponse
-	err := c.DB.Select("namespace_id, grant_type").Where("user_id = ?", userId).Find(&res).Offset(offset).Limit(10).Error
+	err := c.DB.Select("namespace_id, grant_type").Where("user_id = ?", userId).Offset(offset).Limit(10).Find(&res).Error
 	if err != nil {
 		return nil, err
 	}

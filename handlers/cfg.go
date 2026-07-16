@@ -24,8 +24,8 @@ func (cont *Controller) CfgMeHandlersSetup(router fiber.Router) {
 func (cont *Controller) CfgNamespaceHandlersSetup(router fiber.Router) {
 	router.Post("/invite", NotImplementedMiddlewareHandler)
 	router.Post("/disinvite", NotImplementedMiddlewareHandler)
-	router.Post("/wtoken/create", NotImplementedMiddlewareHandler)
-	router.Post("/wtoken/revoke", NotImplementedMiddlewareHandler)
+	router.Post("/token/create", NotImplementedMiddlewareHandler)
+	router.Post("/token/revoke", NotImplementedMiddlewareHandler)
 }
 
 // GetCfgMeHandler
@@ -58,8 +58,8 @@ func (con *Controller) GetCfgMeHandler(c fiber.Ctx) error {
 			return c.Status(fiber.StatusInternalServerError).JSON(
 				lib.NewRFCErrorResponse(
 					lib.ErrorDatabaseError,
-					fiber.StatusInternalServerError,
 					"Database Error",
+					fiber.StatusInternalServerError,
 					err.Error(),
 					c.Path(),
 				),
@@ -68,8 +68,8 @@ func (con *Controller) GetCfgMeHandler(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(
 			lib.NewRFCErrorResponse(
 				lib.ErrorInternalServerError,
-				fiber.StatusInternalServerError,
 				"Internal Server Error",
+				fiber.StatusInternalServerError,
 				"Internal Server Error has occurred. Please retry later.",
 				c.Path(),
 			),
@@ -111,8 +111,8 @@ func (con *Controller) PostCfgMeNameHandler(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(
 			lib.NewRFCErrorResponse(
 				lib.ErrorInvalidRequest,
-				fiber.StatusBadRequest,
 				"Invalid Request",
+				fiber.StatusBadRequest,
 				err.Error(),
 				c.Path(),
 			),
@@ -123,8 +123,8 @@ func (con *Controller) PostCfgMeNameHandler(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(
 			lib.NewRFCErrorResponse(
 				lib.ErrorDatabaseError,
-				fiber.StatusInternalServerError,
 				"Database Error",
+				fiber.StatusInternalServerError,
 				err.Error(),
 				c.Path(),
 			),
@@ -150,8 +150,8 @@ func (con *Controller) GetCfgMeNamespaceHandler(c fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(
 			lib.NewRFCErrorResponse(
 				lib.ErrorInvalidRequest,
-				fiber.StatusBadRequest,
 				"Invalid Request",
+				fiber.StatusBadRequest,
 				"Invalid offset parameter",
 				c.Path(),
 			),
@@ -175,8 +175,8 @@ func (con *Controller) GetCfgMeNamespaceHandler(c fiber.Ctx) error {
 			return c.Status(fiber.StatusInternalServerError).JSON(
 				lib.NewRFCErrorResponse(
 					lib.ErrorDatabaseError,
-					fiber.StatusInternalServerError,
 					"Database Error",
+					fiber.StatusInternalServerError,
 					err.Error(),
 					c.Path(),
 				),
@@ -185,8 +185,8 @@ func (con *Controller) GetCfgMeNamespaceHandler(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(
 			lib.NewRFCErrorResponse(
 				lib.ErrorInternalServerError,
-				fiber.StatusInternalServerError,
 				"Internal Server Error",
+				fiber.StatusInternalServerError,
 				"Internal Server Error has occurred. Please retry later.",
 				c.Path(),
 			),
@@ -225,8 +225,8 @@ func (con *Controller) PostCfgMeNamespaceCreateHandler(c fiber.Ctx) error {
 			return c.Status(fiber.StatusInternalServerError).JSON(
 				lib.NewRFCErrorResponse(
 					lib.ErrorDatabaseError,
-					fiber.StatusInternalServerError,
 					"Database Error",
+					fiber.StatusInternalServerError,
 					err.Error(),
 					c.Path(),
 				),
@@ -235,8 +235,8 @@ func (con *Controller) PostCfgMeNamespaceCreateHandler(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(
 			lib.NewRFCErrorResponse(
 				lib.ErrorInternalServerError,
-				fiber.StatusInternalServerError,
 				"Internal Server Error",
+				fiber.StatusInternalServerError,
 				"Internal Server Error has occurred. Please retry later.",
 				c.Path(),
 			),

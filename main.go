@@ -13,6 +13,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/toyama-pj/simple-kvs-registory/handlers"
 	"github.com/toyama-pj/simple-kvs-registory/lib"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	_ "github.com/toyama-pj/simple-kvs-registory/docs"
@@ -35,6 +36,8 @@ func main() {
 	var dialect gorm.Dialector
 	if config.DATABASE_PROVIDER == "duckdb" {
 		dialect = duckdb.Open(config.DATABASE_DSN)
+	} else if config.DATABASE_PROVIDER == "postgres" {
+		dialect = postgres.Open(config.DATABASE_DSN)
 	} else {
 		panic("unsupported database provider")
 	}
@@ -94,11 +97,7 @@ func main() {
 
 	v1.Route("/auth/", con.AuthHandlersSetup)
 	v1.Route("/cfg/", con.CfgHandlersSetup)
-	v1.Get(
-		"/data/{namespace}",
-		con.AuthenticationMiddlewareHandler,
-		handlers.NotImplementedMiddlewareHandler,
-	)
+	v1.Route("/data/", con.DataHandlersSetup)
 
 	app.Use(handlers.NotFoundMiddlewareHandler)
 
@@ -113,9 +112,11 @@ func main() {
 			log.Printf("Fiber shutdown failed: %s", err)
 		}
 
-		log.Println("Flushing WAL to database...")
-		if err := db.Exec("CHECKPOINT;").Error; err != nil {
-			log.Printf("DuckDB checkpoint failed: %s", err)
+		if config.DATABASE_PROVIDER == "duckdb" {
+			log.Println("Flushing WAL to database...")
+			if err := db.Exec("CHECKPOINT;").Error; err != nil {
+				log.Printf("DuckDB checkpoint failed: %s", err)
+			}
 		}
 
 		sqlDB, err := db.DB()

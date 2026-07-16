@@ -20,27 +20,20 @@ func (Data) TableName() string {
 }
 
 type Filter struct {
-	Before    *time.Time
-	After     *time.Time
-	Namespace string
+	Before    time.Time
+	After     time.Time
+	Namespace uuid.UUID
 	Key       string
 	Limit     int
 	Offset    int
+	TimeOrder string
 }
 
 type Database struct {
 	db *gorm.DB
 }
 
-func NewDatabase(db *gorm.DB) Database {
-	return Database{db: db}
-}
-
-func (d Database) Init() error {
-	return d.db.AutoMigrate(&Data{})
-}
-
-func (d Database) Write(data Data) error {
+func (con Controller) Write(data Data) error {
 	if data.ID == uuid.Nil {
 		newUUID, err := uuid.NewV7()
 		if err != nil {
@@ -49,13 +42,13 @@ func (d Database) Write(data Data) error {
 		data.ID = newUUID
 	}
 
-	return d.db.Create(&data).Error
+	return con.DB.Create(&data).Error
 }
 
-func (d Database) Read() ([]Data, error) {
+func (con Controller) Read(namespace uuid.UUID) ([]Data, error) {
 	var results []Data
 
-	err := d.db.Order("time DESC").Limit(50).Find(&results).Error
+	err := con.DB.Order("time DESC").Where("namespace = ?", namespace).Limit(50).Find(&results).Error
 	if err != nil {
 		return nil, err
 	}
@@ -63,28 +56,32 @@ func (d Database) Read() ([]Data, error) {
 	return results, nil
 }
 
-func (d Database) ReadWithFilter(filter Filter) ([]Data, error) {
+func (con Controller) ReadWithFilter(filter Filter) ([]Data, error) {
 	var results []Data
 
-	query := d.db.Model(&Data{})
+	query := con.DB.Model(&Data{})
 
-	if filter.Before != nil {
-		query = query.Where("time <= ?", *filter.Before)
+	if !filter.Before.IsZero() {
+		query = query.Where("time <= ?", filter.Before)
 	}
-	if filter.After != nil {
-		query = query.Where("time >= ?", *filter.After)
+	if !filter.After.IsZero() {
+		query = query.Where("time >= ?", filter.After)
 	}
-	if filter.Namespace != "" {
+	if filter.Namespace != uuid.Nil {
 		query = query.Where("namespace = ?", filter.Namespace)
 	}
 	if filter.Key != "" {
 		query = query.Where("key = ?", filter.Key)
 	}
 
-	query = query.Order("time DESC")
+	if filter.TimeOrder == "ASC" {
+		query = query.Order("time ASC")
+	} else {
+		query = query.Order("time DESC")
+	}
 
 	limit := filter.Limit
-	if limit == 0 || limit > 50 {
+	if limit <= 0 || limit > 50 {
 		limit = 50
 	}
 	query = query.Limit(limit)

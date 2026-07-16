@@ -19,20 +19,25 @@ type ErrorType string
 type StatusType string
 
 const (
-	ErrorUnexpected ErrorType = "error/unexpected"
+	// ErrorUnexpected ErrorType = "error/unexpected"
 
-	ErrorCommonUnauthorized   ErrorType = "error/common/unauthorized"
-	ErrorCommonNotFound       ErrorType = "error/common/not_found"
+	ErrorCommonUnauthorized ErrorType = "error/common/unauthorized"
+	// ErrorCommonNotFound       ErrorType = "error/common/not_found"
 	ErrorCommonNotImplemented ErrorType = "error/common/not_implemented"
 
-	ErrorInvalidRequest      ErrorType = "error/common/invalid_request"
+	ErrorInvalidRequest ErrorType = "error/common/invalid_request"
+
+	ErrorRequestValueIsNotInt              ErrorType = "error/common/invalid_request/parse_int"
+	ErrorRequestValueIsNotInExpectedValues ErrorType = "error/common/invalid_request/not_in_expected_values"
+	ErrorRequestValueIsNotUUID             ErrorType = "error/common/invalid_request/parse_uuid"
+
 	ErrorInternalServerError ErrorType = "error/common/internal_server_error"
 	ErrorDatabaseError       ErrorType = "error/common/database_error"
 
 	ErrorAuthTokenError ErrorType = "error/auth/invalid_token"
 )
 
-func NewRFCErrorResponse(ErrorType ErrorType, status int, title, detail, instance string) RFCErrorResponse {
+func NewRFCErrorResponse(ErrorType ErrorType, title string, status int, detail, instance string) RFCErrorResponse {
 	return RFCErrorResponse{
 		Type:     string(ErrorType),
 		Title:    title,
@@ -45,8 +50,8 @@ func NewRFCErrorResponse(ErrorType ErrorType, status int, title, detail, instanc
 func NewRFCUnauthorizedErrorResponse(detail string, instance string) RFCErrorResponse {
 	return NewRFCErrorResponse(
 		ErrorCommonUnauthorized,
-		fiber.StatusUnauthorized,
 		"Unauthorized Error",
+		fiber.StatusUnauthorized,
 		detail,
 		instance,
 	)
@@ -55,8 +60,8 @@ func NewRFCUnauthorizedErrorResponse(detail string, instance string) RFCErrorRes
 func NewRFCNotImplementErrorResponse(instance string) RFCErrorResponse {
 	return NewRFCErrorResponse(
 		ErrorCommonNotImplemented,
-		fiber.StatusNotImplemented,
 		"Not Implemented Error",
+		fiber.StatusNotImplemented,
 		"This feature is not implemented",
 		instance,
 	)
