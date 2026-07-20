@@ -20,7 +20,7 @@ func (cont *Controller) CfgHandlersSetup(router fiber.Router) {
 func (cont *Controller) CfgMeHandlersSetup(router fiber.Router) {
 	router.Get("/", cont.GetCfgMeHandler)
 	router.Post("/name", cont.PostCfgMeNameHandler)
-	router.Post("/create", cont.PostCfgMeNamespaceCreateHandler)
+	router.Post("/namespace/create", cont.PostCfgMeNamespaceCreateHandler)
 	router.Get("/namespace", cont.GetCfgMeNamespaceHandler)
 }
 
