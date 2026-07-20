@@ -113,6 +113,19 @@ func (con *Controller) GetDataNamespaceHandler(c fiber.Ctx) error {
 		)
 	}
 
+	_, hasWriteToken := c.Locals("writeAccessTokenNamespaceId").(uuid.UUID)
+	if hasWriteToken {
+		return c.Status(fiber.StatusForbidden).JSON(
+			lib.NewRFCErrorResponse(
+				lib.ErrorCommonUnauthorized,
+				"Forbidden",
+				fiber.StatusForbidden,
+				"WriteAccessToken cannot be used for reading data",
+				c.Path(),
+			),
+		)
+	}
+
 	userIdVal := c.Locals("userId")
 	userID, ok := userIdVal.(uuid.UUID)
 	if !ok {
@@ -283,27 +296,42 @@ func (con *Controller) PostDataNamespaceHandler(c fiber.Ctx) error {
 	}
 	conn := con.ReturnLibController()
 
-	userIdVal := c.Locals("userId")
-	userID, ok := userIdVal.(uuid.UUID)
-	if !ok {
-		return c.Status(fiber.StatusUnauthorized).JSON(
-			lib.NewRFCUnauthorizedErrorResponse(
-				"unauthorized",
-				c.Path(),
-			),
-		)
-	}
-	_, canWrite, _, err := conn.CheckUserPermissionToAccessNamespace(userID.String(), c.Params("namespace"))
-	if err != nil || !canWrite {
-		return c.Status(fiber.StatusForbidden).JSON(
-			lib.NewRFCErrorResponse(
-				lib.ErrorCommonUnauthorized,
-				"Forbidden",
-				fiber.StatusForbidden,
-				"You don't have permission to write to this namespace",
-				c.Path(),
-			),
-		)
+	writeTokenNs, hasWriteToken := c.Locals("writeAccessTokenNamespaceId").(uuid.UUID)
+	if hasWriteToken {
+		if writeTokenNs.String() != c.Params("namespace") {
+			return c.Status(fiber.StatusForbidden).JSON(
+				lib.NewRFCErrorResponse(
+					lib.ErrorCommonUnauthorized,
+					"Forbidden",
+					fiber.StatusForbidden,
+					"You don't have permission to write to this namespace",
+					c.Path(),
+				),
+			)
+		}
+	} else {
+		userIdVal := c.Locals("userId")
+		userID, ok := userIdVal.(uuid.UUID)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(
+				lib.NewRFCUnauthorizedErrorResponse(
+					"unauthorized",
+					c.Path(),
+				),
+			)
+		}
+		_, canWrite, _, err := conn.CheckUserPermissionToAccessNamespace(userID.String(), c.Params("namespace"))
+		if err != nil || !canWrite {
+			return c.Status(fiber.StatusForbidden).JSON(
+				lib.NewRFCErrorResponse(
+					lib.ErrorCommonUnauthorized,
+					"Forbidden",
+					fiber.StatusForbidden,
+					"You don't have permission to write to this namespace",
+					c.Path(),
+				),
+			)
+		}
 	}
 
 	for _, p := range payload.KeyValueWithTime {

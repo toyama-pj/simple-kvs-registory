@@ -80,31 +80,37 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 
 	var tokenRecord lib.UserBearerToken
 	err := con.DB.Where("token = ?", tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&tokenRecord).Error
-	if err != nil {
-		return c.Status(fiber.StatusUnauthorized).JSON(
-			lib.NewRFCUnauthorizedErrorResponse(
-				"invalid authorization token.",
-				c.Path(),
-			),
-		)
+	if err == nil {
+		tokenRecord.ExpiresAt = time.Now().Add(time.Hour * 24)
+		err = con.DB.Save(&tokenRecord).Error
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(
+				lib.NewRFCErrorResponse(
+					lib.ErrorDatabaseError,
+					"Database Error",
+					fiber.StatusInternalServerError,
+					"failed to update authorization token.",
+					c.Path(),
+				),
+			)
+		}
+		c.Locals("userId", tokenRecord.UserID)
+		return c.Next()
 	}
 
-	tokenRecord.ExpiresAt = time.Now().Add(time.Hour * 24)
-	err = con.DB.Save(&tokenRecord).Error
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(
-			lib.NewRFCErrorResponse(
-				lib.ErrorDatabaseError,
-				"Database Error",
-				fiber.StatusInternalServerError,
-				"failed to update authorization token.",
-				c.Path(),
-			),
-		)
+	var writeTokenRecord lib.WriteAccessToken
+	if err := con.DB.Where("token = ?", tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&writeTokenRecord).Error; err == nil {
+		c.Locals("writeAccessTokenNamespaceId", writeTokenRecord.NameSpaceID)
+		return c.Next()
 	}
 
-	c.Locals("userId", tokenRecord.UserID)
-	return c.Next()
+	return c.Status(fiber.StatusUnauthorized).JSON(
+		lib.NewRFCUnauthorizedErrorResponse(
+			"invalid authorization token.",
+			c.Path(),
+		),
+	)
+
 }
 
 func NotFoundMiddlewareHandler(c fiber.Ctx) error {

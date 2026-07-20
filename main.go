@@ -55,6 +55,8 @@ func main() {
 			&lib.User{},
 			&lib.UserOneTimeLogin{},
 			&lib.UserBearerToken{},
+			&lib.NamespaceAccessPermission{},
+			&lib.WriteAccessToken{},
 			&handlers.AccessLog{},
 		)
 		if err != nil {
