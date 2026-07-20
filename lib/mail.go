@@ -1,8 +1,10 @@
 package lib
 
 import (
+	"errors"
 	"fmt"
 	"net/smtp"
+	"strings"
 )
 
 func (c *Controller) SendOneTimeLoginCode(toEmail string, code string) error {
@@ -20,7 +22,11 @@ func (c *Controller) SendOneTimeLoginCode(toEmail string, code string) error {
 
 	var auth smtp.Auth
 	if username != "" && password != "" {
-		auth = smtp.PlainAuth("", username, password, host)
+		auth = &unconstrainedAuth{
+			username: username,
+			password: password,
+			host:     host,
+		}
 	}
 	addr := fmt.Sprintf("%s:%d", host, port)
 
@@ -57,7 +63,11 @@ func (c *Controller) SendRegistrationCode(toEmail string, code string) error {
 
 	var auth smtp.Auth
 	if username != "" && password != "" {
-		auth = smtp.PlainAuth("", username, password, host)
+		auth = &unconstrainedAuth{
+			username: username,
+			password: password,
+			host:     host,
+		}
 	}
 	addr := fmt.Sprintf("%s:%d", host, port)
 
@@ -77,4 +87,51 @@ func (c *Controller) SendRegistrationCode(toEmail string, code string) error {
 	)
 
 	return smtp.SendMail(addr, auth, from, []string{toEmail}, msg)
+}
+
+// unconstrainedAuth is a custom SMTP authenticator that supports both PLAIN and LOGIN,
+// and doesn't restrict to TLS-only like the standard PlainAuth does.
+type unconstrainedAuth struct {
+	username string
+	password string
+	host     string
+	authType string
+}
+
+func (a *unconstrainedAuth) Start(server *smtp.ServerInfo) (string, []byte, error) {
+	// サーバーがサポートしている認証方式を確認
+	var hasPlain, hasLogin bool
+	for _, auth := range server.Auth {
+		if auth == "PLAIN" {
+			hasPlain = true
+		} else if auth == "LOGIN" {
+			hasLogin = true
+		}
+	}
+
+	if hasPlain {
+		a.authType = "PLAIN"
+		resp := []byte("\x00" + a.username + "\x00" + a.password)
+		return "PLAIN", resp, nil
+	} else if hasLogin {
+		a.authType = "LOGIN"
+		return "LOGIN", []byte{}, nil
+	}
+
+	return "", nil, errors.New("smtp: server doesn't support PLAIN or LOGIN auth")
+}
+
+func (a *unconstrainedAuth) Next(fromServer []byte, more bool) ([]byte, error) {
+	if !more {
+		return nil, nil
+	}
+	if a.authType == "LOGIN" {
+		prompt := strings.ToLower(string(fromServer))
+		if strings.Contains(prompt, "username") {
+			return []byte(a.username), nil
+		} else if strings.Contains(prompt, "password") {
+			return []byte(a.password), nil
+		}
+	}
+	return nil, nil
 }
