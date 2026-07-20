@@ -51,9 +51,9 @@ flowchart TD
     D[ユーザー用 Bearer Token を取得]
     E[POST /cfg/me/namespace/create<br>名前空間を作成]
     F[GET /cfg/me/namespace<br>名前空間 ID を確認]
-    G[POST /cfg/{namespace}/token/create<br>書き込み専用トークンを発行]
-    H[POST /data/{namespace}<br>データを書き込む]
-    I[GET /data/{namespace}<br>データを取得する]
+    G[POST /cfg/:namespace/token/create<br>書き込み専用トークンを発行]
+    H[POST /data/:namespace<br>データを書き込む]
+    I[GET /data/:namespace<br>データを取得する]
 
     A --> B --> C --> D --> E --> F --> G --> H --> I
 ```
