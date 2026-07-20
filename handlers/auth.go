@@ -34,6 +34,7 @@ func (cont *Controller) AuthHandlersSetup(router fiber.Router) {
 		Max:        5,
 		Expiration: 10 * time.Minute,
 	}), cont.PostLoginHandler)
+	router.Post("/register", cont.PostRegisterHandler)
 }
 
 type PostLoginOneTimeCodeRequestBody struct {
@@ -213,4 +214,72 @@ func (con *Controller) PostLoginHandler(c fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(token)
+}
+
+type PostRegisterRequestBody struct {
+	Name  string `json:"name" validate:"required"`
+	Email string `json:"email" validate:"required,email"`
+}
+
+// PostRegisterHandler
+// @Summary		ユーザーの新規登録
+// @Description	名前とメールアドレスを使用して新しいユーザーを作成する
+// @Accept		json
+// @Produce		json
+// @Param		request	body		PostRegisterRequestBody	true	"Name and Email"
+// @Success		201		{object}	nil				"成功（返却ボディなし）"
+// @Failure		400		{object}	lib.RFCErrorResponse
+// @Failure		500		{object}	lib.RFCErrorResponse
+// @Router		/auth/register [post]
+func (con *Controller) PostRegisterHandler(c fiber.Ctx) error {
+	req := new(PostRegisterRequestBody)
+	if err := c.Bind().All(req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(
+			lib.NewRFCErrorResponse(
+				lib.ErrorInvalidRequest,
+				"Invalid Request",
+				fiber.StatusBadRequest,
+				"Request is not valid",
+				c.Path(),
+			),
+		)
+	}
+
+	cont := con.ReturnLibController()
+	err := cont.CreateUser(req.Name, req.Email)
+	if err != nil {
+		if err.Error() == "user already exists" {
+			return c.Status(fiber.StatusBadRequest).JSON(
+				lib.NewRFCErrorResponse(
+					lib.ErrorInvalidRequest,
+					"User already exists",
+					fiber.StatusBadRequest,
+					"A user with this email already exists",
+					c.Path(),
+				),
+			)
+		}
+		if con.Config.DEVELOPMENT == true {
+			return c.Status(fiber.StatusInternalServerError).JSON(
+				lib.NewRFCErrorResponse(
+					lib.ErrorDatabaseError,
+					"Database Error",
+					fiber.StatusInternalServerError,
+					err.Error(),
+					c.Path(),
+				),
+			)
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(
+			lib.NewRFCErrorResponse(
+				lib.ErrorInternalServerError,
+				"Internal Server Error",
+				fiber.StatusInternalServerError,
+				"Internal Server Error has occurred. Please retry later.",
+				c.Path(),
+			),
+		)
+	}
+
+	return c.Status(fiber.StatusCreated).JSON("{}")
 }
