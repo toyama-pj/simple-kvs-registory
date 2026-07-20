@@ -11,9 +11,6 @@ services:
       - WEB_HOSTNAME=0.0.0.0
       - WEB_PORT=3000
       - DEVELOPMENT=true
-    depends_on:
-      db:
-        condition: service_healthy
 
 #  db:
 #    image: postgres:16-alpine
