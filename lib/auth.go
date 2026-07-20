@@ -403,7 +403,12 @@ type GetCfgMeNamespaceResponse []_getCfgMeNamespaceResponse
 
 func (c *Controller) GetAvailableNamespaceList(userId uuid.UUID, offset int) (GetCfgMeNamespaceResponse, error) {
 	var res GetCfgMeNamespaceResponse
-	err := c.DB.Select("namespace_id, grant_type").Where("user_id = ?", userId).Offset(offset).Limit(10).Find(&res).Error
+	err := c.DB.Model(&NamespaceAccessPermission{}).
+		Select("namespace_id, grant_type").
+		Where("user_id = ?", userId).
+		Offset(offset).
+		Limit(10).
+		Find(&res).Error
 	if err != nil {
 		return nil, err
 	}
