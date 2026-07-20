@@ -9,17 +9,7 @@ import (
 	"github.com/toyama-pj/simple-kvs-registory/lib"
 )
 
-type AccessLog struct {
-	Time        time.Time   `json:"time"`
-	Endpoint    string      `gorm:"type:varchar" json:"endpoint"`
-	IPAddr      string      `gorm:"type:varchar" json:"ip_addr"`
-	RequestType string      `gorm:"type:varchar" json:"request_type"`
-	StatusCode  int         `json:"status_code"`
-	ProcessTime float32     `json:"process_time"`
-	RequestBody interface{} `gorm:"serializer:json;type:varchar" json:"request_body"`
-}
-
-func AccessLogMiddlewareHandler(c fiber.Ctx) error {
+func (con *Controller) AccessLogMiddlewareHandler(c fiber.Ctx) error {
 	startTime := time.Now()
 
 	var reqBody interface{}
@@ -33,7 +23,7 @@ func AccessLogMiddlewareHandler(c fiber.Ctx) error {
 	status := c.Response().StatusCode()
 	latency := float32(time.Since(startTime).Seconds())
 
-	accessLog := AccessLog{
+	accessLog := lib.AccessLog{
 		Time:        startTime,
 		Endpoint:    c.Path(),
 		IPAddr:      c.IP(),
@@ -43,7 +33,10 @@ func AccessLogMiddlewareHandler(c fiber.Ctx) error {
 		RequestBody: reqBody,
 	}
 
-	log.Println(&accessLog)
+	log.Printf("[%s] %s %s %d %fms\n", accessLog.IPAddr, accessLog.RequestType, accessLog.Endpoint, accessLog.StatusCode, accessLog.ProcessTime*1000)
+
+	// Save to DB asynchronously
+	con.ReturnLibController().SaveAccessLogAsync(accessLog)
 
 	return err
 }

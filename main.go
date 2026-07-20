@@ -8,13 +8,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/alifiroozi80/duckdb"
 	swaggo "github.com/gofiber/contrib/v3/swaggo"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/basicauth"
 	"github.com/toyama-pj/simple-kvs-registory/handlers"
 	"github.com/toyama-pj/simple-kvs-registory/lib"
-	"gorm.io/driver/postgres"
+	"github.com/toyama-pj/simple-kvs-registory/lib/db"
 	"gorm.io/gorm"
 
 	_ "github.com/toyama-pj/simple-kvs-registory/docs"
@@ -34,14 +33,7 @@ func main() {
 	}
 
 	// DB Connection
-	var dialect gorm.Dialector
-	if config.DATABASE_PROVIDER == "duckdb" {
-		dialect = duckdb.Open(config.DATABASE_DSN)
-	} else if config.DATABASE_PROVIDER == "postgres" {
-		dialect = postgres.Open(config.DATABASE_DSN)
-	} else {
-		panic("unsupported database provider")
-	}
+	dialect := db.GetDatabaseDialector(config.DATABASE_PROVIDER, config.DATABASE_DSN)
 
 	// DB Migration
 	db, err := gorm.Open(dialect, &gorm.Config{})
@@ -58,7 +50,7 @@ func main() {
 			&lib.UserBearerToken{},
 			&lib.NamespaceAccessPermission{},
 			&lib.WriteAccessToken{},
-			&handlers.AccessLog{},
+			&lib.AccessLog{},
 		)
 		if err != nil {
 			panic(fmt.Sprintf("failed to migrate db: %s", err))
@@ -96,7 +88,7 @@ func main() {
 
 	app.Get("/docs/*", docsBasicMiddleware, swaggo.HandlerDefault)
 
-	app.Use(handlers.AccessLogMiddlewareHandler)
+	app.Use(con.AccessLogMiddlewareHandler)
 
 	v1 := app.Group("/api/v1")
 
