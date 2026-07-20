@@ -395,8 +395,8 @@ func (c *Controller) CheckUserPermissionToAccessNamespace(userId string, namespa
 }
 
 type _getCfgMeNamespaceResponse struct {
-	NameSpaceID uuid.UUID `json:"namespace_id"`
-	GrantType   string    `json:"grant_type"`
+	NamespaceID uuid.UUID `gorm:"column:namespace_id" json:"namespace_id"`
+	GrantType   string    `gorm:"column:grant_type" json:"grant_type"`
 }
 
 type GetCfgMeNamespaceResponse []_getCfgMeNamespaceResponse
