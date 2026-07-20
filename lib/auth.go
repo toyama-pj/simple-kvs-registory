@@ -24,6 +24,15 @@ type User struct {
 	DeletedAt gorm.DeletedAt `json:"-" swaggerignore:"true"`
 }
 
+type UserRegistration struct {
+	ID        int       `gorm:"primaryKey;column:id;autoIncrement"`
+	Name      string    `gorm:"type:varchar;column:name"`
+	Email     string    `gorm:"type:varchar;column:email"`
+	Token     string    `gorm:"type:varchar;column:token"`
+	CreatedAt time.Time `gorm:"type:timestamptz;column:created_at"`
+	ExpiresAt time.Time `gorm:"type:timestamptz;column:expires_at"`
+}
+
 type UserOneTimeLogin struct {
 	ID        int       `gorm:"primaryKey;column:id;autoIncrement"`
 	UserID    uuid.UUID `gorm:"column:user_id"`
@@ -73,6 +82,10 @@ func (UserBearerToken) TableName() string {
 
 func (User) TableName() string {
 	return "user"
+}
+
+func (UserRegistration) TableName() string {
+	return "user_registration"
 }
 
 func createRandomDigit(n int) (string, error) {
@@ -142,6 +155,63 @@ func (c *Controller) CreateUserOneTimeLoginCode(userID uuid.UUID) (string, error
 		return res, nil
 	}
 	return "", ErrUserNotFound
+}
+
+func (c *Controller) CreateUserRegistrationCode(name string, email string) (string, error) {
+	var userCount int64
+	err := c.DB.Model(&User{}).Where("email = ?", email).Count(&userCount).Error
+	if err != nil {
+		return "", err
+	}
+	if userCount > 0 {
+		return "", errors.New("user already exists")
+	}
+
+	res, err := createRandomDigit(6)
+	if err != nil {
+		return "", err
+	}
+	u := UserRegistration{
+		Name:      name,
+		Email:     email,
+		Token:     res,
+		CreatedAt: time.Now(),
+		ExpiresAt: time.Now().Add(time.Minute * 30),
+	}
+	err = c.DB.Create(&u).Error
+	if err != nil {
+		return "", err
+	}
+	return res, nil
+}
+
+func (c *Controller) VerifyUserRegistrationCode(email string, code string) (*User, error) {
+	var reg UserRegistration
+	err := c.DB.Where("email = ? AND token = ?", email, code).
+		Where("expires_at > ?", time.Now()).
+		Order("created_at desc").
+		First(&reg).Error
+	
+	if err != nil {
+		return nil, ErrInvalidToken
+	}
+
+	// Create user
+	user := User{
+		ID:    uuid.New(),
+		Name:  reg.Name,
+		Email: reg.Email,
+	}
+
+	err = c.DB.Create(&user).Error
+	if err != nil {
+		return nil, err
+	}
+
+	// Clean up used and old registration codes for this email
+	c.DB.Where("email = ?", email).Delete(&UserRegistration{})
+
+	return &user, nil
 }
 
 func (c *Controller) GetUserOneTimeLoginCode(email string, token string) (User, error) {

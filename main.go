@@ -51,6 +51,7 @@ func main() {
 			&lib.NamespaceAccessPermission{},
 			&lib.WriteAccessToken{},
 			&lib.AccessLog{},
+			&lib.UserRegistration{},
 		)
 		if err != nil {
 			panic(fmt.Sprintf("failed to migrate db: %s", err))

@@ -34,7 +34,14 @@ func (cont *Controller) AuthHandlersSetup(router fiber.Router) {
 		Max:        5,
 		Expiration: 10 * time.Minute,
 	}), cont.PostLoginHandler)
-	router.Post("/register", cont.PostRegisterHandler)
+	router.Post("/register", limiter.New(limiter.Config{
+		Max:        3,
+		Expiration: 10 * time.Minute,
+	}), cont.PostRegisterHandler)
+	router.Post("/register/callback", limiter.New(limiter.Config{
+		Max:        5,
+		Expiration: 10 * time.Minute,
+	}), cont.PostRegisterCallbackHandler)
 }
 
 type PostLoginOneTimeCodeRequestBody struct {
@@ -233,9 +240,11 @@ func (con *Controller) PostRegisterHandler(c fiber.Ctx) error {
 	}
 
 	cont := con.ReturnLibController()
-	err := cont.CreateUser(req.Name, req.Email)
+	code, err := cont.CreateUserRegistrationCode(req.Name, req.Email)
 	if err != nil {
 		if err.Error() == "user already exists" {
+			// 同様にセキュリティの観点からエラーとせず、既存ユーザにログインワンタイムパスワードを送るなどの分岐も検討可能ですが
+			// 今回はシンプルに重複エラーを返します
 			return c.Status(fiber.StatusBadRequest).JSON(
 				lib.NewRFCErrorResponse(
 					lib.ErrorInvalidRequest,
@@ -248,25 +257,98 @@ func (con *Controller) PostRegisterHandler(c fiber.Ctx) error {
 		}
 		if con.Config.DEVELOPMENT == true {
 			return c.Status(fiber.StatusInternalServerError).JSON(
-				lib.NewRFCErrorResponse(
-					lib.ErrorDatabaseError,
-					"Database Error",
-					fiber.StatusInternalServerError,
-					err.Error(),
-					c.Path(),
-				),
+				lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "Database Error", fiber.StatusInternalServerError, err.Error(), c.Path()),
 			)
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(
+			lib.NewRFCErrorResponse(lib.ErrorInternalServerError, "Internal Server Error", fiber.StatusInternalServerError, "Internal Server Error has occurred. Please retry later.", c.Path()),
+		)
+	}
+
+	if con.Config.SMTP_USERNAME != "" {
+		err = cont.SendRegistrationCode(req.Email, code)
+		if err != nil {
+			fmt.Printf("Failed to send registration email to %s: %v\n", req.Email, err)
+			return c.Status(fiber.StatusInternalServerError).JSON(
+				lib.NewRFCErrorResponse(lib.ErrorInternalServerError, "Email Sending Failed", fiber.StatusInternalServerError, "Failed to send registration code.", c.Path()),
+			)
+		}
+	} else if con.Config.DEVELOPMENT == true {
+		fmt.Println("Because SMTP_USERNAME is empty, Registration Code is not sending.")
+		fmt.Printf("Sent to %s, and Registration Code is %s\n", req.Email, code)
+	} else {
+		fmt.Println("SMTP is not configured, cannot send registration email in PRODUCTION")
+		return c.Status(fiber.StatusInternalServerError).JSON(
+			lib.NewRFCErrorResponse(lib.ErrorInternalServerError, "Email Configuration Error", fiber.StatusInternalServerError, "SMTP is not configured.", c.Path()),
+		)
+	}
+
+	return c.Status(fiber.StatusNoContent).JSON("{}")
+}
+
+type PostRegisterCallbackRequestBody struct {
+	Email string `json:"email" validate:"required,email"`
+	Code  string `json:"code" validate:"required,len=6"`
+}
+
+// PostRegisterCallbackHandler
+// @Summary		ユーザー登録ワンタイムコードを検証
+// @Description	メールアドレスと登録ワンタイムパスコードを検証し、ユーザーを作成して Bearer Token を返却する
+// @Accept		json
+// @Produce		json
+// @Param		request	body		PostRegisterCallbackRequestBody	true	"Email and Code"
+// @Success		201		{object}	lib.UserBearerToken		"Bearer Token"
+// @Failure		400		{object}	lib.RFCErrorResponse
+// @Failure		401		{object}	lib.RFCErrorResponse
+// @Router		/auth/register/callback [post]
+func (con *Controller) PostRegisterCallbackHandler(c fiber.Ctx) error {
+	req := new(PostRegisterCallbackRequestBody)
+	if err := c.Bind().All(req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(
 			lib.NewRFCErrorResponse(
-				lib.ErrorInternalServerError,
-				"Internal Server Error",
-				fiber.StatusInternalServerError,
-				"Internal Server Error has occurred. Please retry later.",
+				lib.ErrorInvalidRequest,
+				"Invalid Request",
+				fiber.StatusBadRequest,
+				"Request is not valid",
 				c.Path(),
 			),
 		)
 	}
 
-	return c.Status(fiber.StatusCreated).JSON("{}")
+	cont := con.ReturnLibController()
+	u, err := cont.VerifyUserRegistrationCode(req.Email, req.Code)
+	if errors.Is(err, lib.ErrInvalidToken) {
+		return c.Status(fiber.StatusUnauthorized).JSON(
+			lib.NewRFCErrorResponse(
+				lib.ErrorAuthTokenError,
+				"Invalid Token",
+				fiber.StatusUnauthorized,
+				"Invalid token or expired",
+				c.Path(),
+			),
+		)
+	} else if err != nil {
+		if con.Config.DEVELOPMENT == true {
+			return c.Status(fiber.StatusInternalServerError).JSON(
+				lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "Database Error", fiber.StatusInternalServerError, err.Error(), c.Path()),
+			)
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(
+			lib.NewRFCErrorResponse(lib.ErrorInternalServerError, "Internal Server Error", fiber.StatusInternalServerError, "Internal Server Error has occurred. Please retry later.", c.Path()),
+		)
+	}
+
+	token, err := cont.CreateUserBearerToken(u.ID)
+	if err != nil {
+		if con.Config.DEVELOPMENT == true {
+			return c.Status(fiber.StatusInternalServerError).JSON(
+				lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "Database Error", fiber.StatusInternalServerError, err.Error(), c.Path()),
+			)
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(
+			lib.NewRFCErrorResponse(lib.ErrorInternalServerError, "Internal Server Error", fiber.StatusInternalServerError, "Internal Server Error has occurred. Please retry later.", c.Path()),
+		)
+	}
+
+	return c.Status(fiber.StatusCreated).JSON(token)
 }
