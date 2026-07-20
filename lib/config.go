@@ -22,6 +22,8 @@ type Config struct {
 
 	DATABASE_PROVIDER string `env:"DATABASE_PROVIDER"`
 	DATABASE_DSN      string `env:"DATABASE_DSN"`
+
+	SWAGGER_BASIC string `env:"SWAGGER_BASIC"`
 }
 
 type Controller struct {

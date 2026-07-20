@@ -11,6 +11,7 @@ import (
 	"github.com/alifiroozi80/duckdb"
 	swaggo "github.com/gofiber/contrib/v3/swaggo"
 	"github.com/gofiber/fiber/v3"
+	"github.com/gofiber/fiber/v3/middleware/basicauth"
 	"github.com/toyama-pj/simple-kvs-registory/handlers"
 	"github.com/toyama-pj/simple-kvs-registory/lib"
 	"gorm.io/driver/postgres"
@@ -87,7 +88,13 @@ func main() {
 	// Web API
 	app := fiber.New()
 
-	app.Get("/docs/*", swaggo.HandlerDefault)
+	docsBasicMiddleware := basicauth.New(basicauth.Config{
+		Users: map[string]string{
+			"docs": "{SHA256}" + config.SWAGGER_BASIC,
+		},
+	})
+
+	app.Get("/docs/*", docsBasicMiddleware, swaggo.HandlerDefault)
 
 	app.Use(handlers.AccessLogMiddlewareHandler)
 

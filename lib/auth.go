@@ -16,12 +16,12 @@ var (
 )
 
 type User struct {
-	ID        uuid.UUID `gorm:"primaryKey;type:uuid;column:id"`
-	Name      string    `gorm:"type:varchar;column:name"`
-	Email     string    `gorm:"type:varchar;column:email;uniqueIndex"`
-	CreatedAt time.Time `gorm:"type:timestamptz;column:created_at"`
-	UpdatedAt time.Time `gorm:"type:timestamptz;column:updated_at"`
-	DeletedAt gorm.DeletedAt
+	ID        uuid.UUID      `gorm:"primaryKey;type:uuid;column:id"`
+	Name      string         `gorm:"type:varchar;column:name"`
+	Email     string         `gorm:"type:varchar;column:email;uniqueIndex"`
+	CreatedAt time.Time      `gorm:"type:timestamptz;column:created_at"`
+	UpdatedAt time.Time      `gorm:"type:timestamptz;column:updated_at"`
+	DeletedAt gorm.DeletedAt `json:"-" swaggerignore:"true"`
 }
 
 type UserOneTimeLogin struct {
@@ -33,13 +33,13 @@ type UserOneTimeLogin struct {
 }
 
 type UserBearerToken struct {
-	ID        int       `gorm:"primaryKey;column:id;autoIncrement" json:"id"`
-	UserID    uuid.UUID `gorm:"column:user_id" json:"user_id"`
-	Token     string    `gorm:"type:varchar;column:token" json:"token"`
-	CreatedAt time.Time `gorm:"type:timestamptz;column:created_at" json:"created_at"`
-	UpdatedAt time.Time `gorm:"type:timestamptz;column:updated_at" json:"updated_at"`
-	ExpiresAt time.Time `gorm:"type:timestamptz;column:expires_at" json:"expires_at"`
-	DeletedAt gorm.DeletedAt
+	ID        int            `gorm:"primaryKey;column:id;autoIncrement" json:"id"`
+	UserID    uuid.UUID      `gorm:"column:user_id" json:"user_id"`
+	Token     string         `gorm:"type:varchar;column:token" json:"token"`
+	CreatedAt time.Time      `gorm:"type:timestamptz;column:created_at" json:"created_at"`
+	UpdatedAt time.Time      `gorm:"type:timestamptz;column:updated_at" json:"updated_at"`
+	ExpiresAt time.Time      `gorm:"type:timestamptz;column:expires_at" json:"expires_at"`
+	DeletedAt gorm.DeletedAt `json:"-" swaggerignore:"true"`
 }
 
 type WriteAccessToken struct {

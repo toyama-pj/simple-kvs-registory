@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"errors"
 	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
 	"github.com/toyama-pj/simple-kvs-registory/lib"
+	"gorm.io/gorm"
 )
 
 func (cont *Controller) CfgHandlersSetup(router fiber.Router) {
@@ -23,8 +25,8 @@ func (cont *Controller) CfgMeHandlersSetup(router fiber.Router) {
 }
 
 func (cont *Controller) CfgNamespaceHandlersSetup(router fiber.Router) {
-	router.Post("/invite", NotImplementedMiddlewareHandler)
-	router.Post("/disinvite", NotImplementedMiddlewareHandler)
+	router.Post("/invite", cont.PostCfgNamespaceInviteHandler)
+	router.Post("/disinvite", cont.PostCfgNamespaceDisinviteHandler)
 	router.Post("/token/create", cont.PostCfgNamespaceTokenCreateHandler)
 	router.Post("/token/revoke", cont.PostCfgNamespaceTokenRevokeHandler)
 }
@@ -249,6 +251,110 @@ func (con *Controller) PostCfgMeNamespaceCreateHandler(c fiber.Ctx) error {
 			"namespace_id": namespaceId,
 		},
 	)
+}
+
+type PostCfgNamespaceInviteRequestBody struct {
+	Email     string `json:"email" validate:"required,email"`
+	GrantType string `json:"grant_type" validate:"required,oneof=r w rw admin"`
+}
+
+// PostCfgNamespaceInviteHandler
+// @Summary ネームスペースへユーザーを招待する
+// @Description ネームスペースに指定したメールアドレスのユーザーを招待し、権限を付与する
+// @Security BearerAuth
+// @Produce json
+// @Param namespace path string true "ネームスペースID (UUID)"
+// @Param request body PostCfgNamespaceInviteRequestBody true "招待するユーザーのメールアドレスと権限"
+// @Success 204 {object} nil "成功（返却ボディなし）"
+// @Failure 400 {object} lib.RFCErrorResponse
+// @Failure 401 {object} lib.RFCErrorResponse
+// @Failure 403 {object} lib.RFCErrorResponse
+// @Failure 500 {object} lib.RFCErrorResponse
+// @Router /cfg/{namespace}/invite [post]
+func (con *Controller) PostCfgNamespaceInviteHandler(c fiber.Ctx) error {
+	namespace := c.Params("namespace")
+	userIdVal := c.Locals("userId")
+	userID, ok := userIdVal.(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(lib.NewRFCUnauthorizedErrorResponse("unauthorized", c.Path()))
+	}
+
+	var req PostCfgNamespaceInviteRequestBody
+	if err := c.Bind().Body(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid Request", fiber.StatusBadRequest, "Invalid request body", c.Path()))
+	}
+
+	conn := con.ReturnLibController()
+	
+	targetUser, err := conn.GetUserByMailAddress(req.Email)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "User Not Found", fiber.StatusBadRequest, "Target user not found", c.Path()))
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to lookup user", c.Path()))
+	}
+
+	err = conn.PermitUserToAccessNamespace(userID.String(), targetUser.ID.String(), namespace, req.GrantType)
+	if err != nil {
+		if err.Error() == "doAsUser is not administrator" {
+			return c.Status(fiber.StatusForbidden).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonUnauthorized, "Forbidden", fiber.StatusForbidden, "You must be an administrator to invite users", c.Path()))
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, err.Error(), c.Path()))
+	}
+
+	return c.Status(fiber.StatusNoContent).JSON("{}")
+}
+
+type PostCfgNamespaceDisinviteRequestBody struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
+// PostCfgNamespaceDisinviteHandler
+// @Summary ネームスペースからユーザーを削除する
+// @Description ネームスペースに指定したメールアドレスのユーザーの権限を剥奪する
+// @Security BearerAuth
+// @Produce json
+// @Param namespace path string true "ネームスペースID (UUID)"
+// @Param request body PostCfgNamespaceDisinviteRequestBody true "削除するユーザーのメールアドレス"
+// @Success 204 {object} nil "成功（返却ボディなし）"
+// @Failure 400 {object} lib.RFCErrorResponse
+// @Failure 401 {object} lib.RFCErrorResponse
+// @Failure 403 {object} lib.RFCErrorResponse
+// @Failure 500 {object} lib.RFCErrorResponse
+// @Router /cfg/{namespace}/disinvite [post]
+func (con *Controller) PostCfgNamespaceDisinviteHandler(c fiber.Ctx) error {
+	namespace := c.Params("namespace")
+	userIdVal := c.Locals("userId")
+	userID, ok := userIdVal.(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(lib.NewRFCUnauthorizedErrorResponse("unauthorized", c.Path()))
+	}
+
+	var req PostCfgNamespaceDisinviteRequestBody
+	if err := c.Bind().Body(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid Request", fiber.StatusBadRequest, "Invalid request body", c.Path()))
+	}
+
+	conn := con.ReturnLibController()
+	
+	_, _, canManage, err := conn.CheckUserPermissionToAccessNamespace(userID.String(), namespace)
+	if err != nil || !canManage {
+		return c.Status(fiber.StatusForbidden).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonUnauthorized, "Forbidden", fiber.StatusForbidden, "You must be an administrator to disinvite users", c.Path()))
+	}
+
+	targetUser, err := conn.GetUserByMailAddress(req.Email)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "User Not Found", fiber.StatusBadRequest, "Target user not found", c.Path()))
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to lookup user", c.Path()))
+	}
+
+	if err := con.DB.Where("namespace_id = ? AND user_id = ?", namespace, targetUser.ID).Delete(&lib.NamespaceAccessPermission{}).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to disinvite user", c.Path()))
+	}
+
+	return c.Status(fiber.StatusNoContent).JSON("{}")
 }
 
 // PostCfgNamespaceTokenCreateHandler

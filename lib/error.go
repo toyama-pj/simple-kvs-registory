@@ -22,7 +22,7 @@ const (
 	// ErrorUnexpected ErrorType = "error/unexpected"
 
 	ErrorCommonUnauthorized ErrorType = "error/common/unauthorized"
-	// ErrorCommonNotFound       ErrorType = "error/common/not_found"
+	ErrorCommonNotFound       ErrorType = "error/common/not_found"
 	ErrorCommonNotImplemented ErrorType = "error/common/not_implemented"
 
 	ErrorInvalidRequest ErrorType = "error/common/invalid_request"
