@@ -64,62 +64,49 @@ func (con *Controller) PostLoginOneTimeCodeHandler(c fiber.Ctx) error {
 		)
 	}
 
-	if con.Config.DEVELOPMENT == true {
-		cont := con.ReturnLibController()
-		u, err := cont.GetUserByMailAddress(req.Email)
-		if err == gorm.ErrRecordNotFound {
-			return c.Status(fiber.StatusNoContent).JSON("{}")
-		}
-		if err != nil {
-			if con.Config.DEVELOPMENT == true {
-				return c.Status(fiber.StatusInternalServerError).JSON(
-					lib.NewRFCErrorResponse(
-						lib.ErrorDatabaseError,
-						"Database Error",
-						fiber.StatusInternalServerError,
-						err.Error(),
-						c.Path(),
-					),
-				)
-			}
+	cont := con.ReturnLibController()
+	u, err := cont.GetUserByMailAddress(req.Email)
+	if err == gorm.ErrRecordNotFound {
+		return c.Status(fiber.StatusNoContent).JSON("{}")
+	}
+	if err != nil {
+		if con.Config.DEVELOPMENT == true {
 			return c.Status(fiber.StatusInternalServerError).JSON(
-				lib.NewRFCErrorResponse(
-					lib.ErrorInternalServerError,
-					"Internal Server Error",
-					fiber.StatusInternalServerError,
-					"Internal Server Error has occurred. Please retry later.",
-					c.Path(),
-				),
+				lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "Database Error", fiber.StatusInternalServerError, err.Error(), c.Path()),
 			)
 		}
-		code, err := cont.CreateUserOneTimeLoginCode(u.ID)
-		if err != nil {
-			if con.Config.DEVELOPMENT == true {
-				return c.Status(fiber.StatusInternalServerError).JSON(
-					lib.NewRFCErrorResponse(
-						lib.ErrorDatabaseError,
-						"Database Error",
-						fiber.StatusInternalServerError,
-						err.Error(),
-						c.Path(),
-					),
-				)
-			}
+		return c.Status(fiber.StatusInternalServerError).JSON(
+			lib.NewRFCErrorResponse(lib.ErrorInternalServerError, "Internal Server Error", fiber.StatusInternalServerError, "Internal Server Error has occurred. Please retry later.", c.Path()),
+		)
+	}
+
+	code, err := cont.CreateUserOneTimeLoginCode(u.ID)
+	if err != nil {
+		if con.Config.DEVELOPMENT == true {
 			return c.Status(fiber.StatusInternalServerError).JSON(
-				lib.NewRFCErrorResponse(
-					lib.ErrorInternalServerError,
-					"Internal Server Error",
-					fiber.StatusInternalServerError,
-					"Internal Server Error has occurred. Please retry later.",
-					c.Path(),
-				),
+				lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "Database Error", fiber.StatusInternalServerError, err.Error(), c.Path()),
 			)
 		}
-		fmt.Println("Because of Development mode, One Time Login Code is not sending.")
+		return c.Status(fiber.StatusInternalServerError).JSON(
+			lib.NewRFCErrorResponse(lib.ErrorInternalServerError, "Internal Server Error", fiber.StatusInternalServerError, "Internal Server Error has occurred. Please retry later.", c.Path()),
+		)
+	}
+
+	if con.Config.SMTP_USERNAME != "" {
+		err = cont.SendOneTimeLoginCode(req.Email, code)
+		if err != nil {
+			fmt.Printf("Failed to send email to %s: %v\n", req.Email, err)
+			return c.Status(fiber.StatusInternalServerError).JSON(
+				lib.NewRFCErrorResponse(lib.ErrorInternalServerError, "Email Sending Failed", fiber.StatusInternalServerError, "Failed to send one-time login code.", c.Path()),
+			)
+		}
+	} else if con.Config.DEVELOPMENT == true {
+		fmt.Println("Because SMTP_USERNAME is empty, One Time Login Code is not sending.")
 		fmt.Printf("Sent to %s, and Code is %s\n", req.Email, code)
 	} else {
-		return c.Status(fiber.StatusNotImplemented).JSON(
-			lib.NewRFCNotImplementErrorResponse(c.Path()),
+		fmt.Println("SMTP is not configured, cannot send email in PRODUCTION")
+		return c.Status(fiber.StatusInternalServerError).JSON(
+			lib.NewRFCErrorResponse(lib.ErrorInternalServerError, "Email Configuration Error", fiber.StatusInternalServerError, "SMTP is not configured.", c.Path()),
 		)
 	}
 	return c.Status(fiber.StatusNoContent).JSON("{}")

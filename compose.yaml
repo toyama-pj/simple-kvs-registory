@@ -5,12 +5,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
-    environment:
-      - DATABASE_PROVIDER=postgres
-      - DATABASE_DSN=host=db user=postgres password=postgres dbname=simple_kvs port=5432 sslmode=disable TimeZone=Asia/Tokyo
-      - WEB_HOSTNAME=0.0.0.0
-      - WEB_PORT=3000
-      - DEVELOPMENT=true
+    env_file:
+      - .env
 
 #  db:
 #    image: postgres:16-alpine
