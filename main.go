@@ -67,14 +67,8 @@ func main() {
 
 	// Web API
 	app := fiber.New(fiber.Config{
-		// IoT端末の暴走や巨大JSONによるメモリ枯渇を防ぐ。書き込みAPIの
-		// 論理的な件数・値サイズ制限はハンドラー側でも検証する。
 		BodyLimit:    1024 * 1024,
 		ErrorHandler: handlers.GlobalErrorHandler,
-	})
-
-	app.Get("/", func(c fiber.Ctx) error {
-		return c.SendString("ok!")
 	})
 
 	docsBasicMiddleware := basicauth.New(basicauth.Config{
@@ -96,6 +90,10 @@ func main() {
 	v1.Route("/auth/", con.AuthHandlersSetup)
 	v1.Route("/cfg/", con.CfgHandlersSetup)
 	v1.Route("/data/", con.DataHandlersSetup)
+
+	app.Get("/", func(c fiber.Ctx) error {
+		return c.SendString("ok!")
+	})
 
 	app.Use(handlers.NotFoundMiddlewareHandler)
 
