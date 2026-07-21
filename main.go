@@ -25,6 +25,7 @@ import (
 // @securityDefinitions.apikey	BearerAuth
 // @in	header
 // @name	Authorization
+// @description	"Bearer " に続けて User Bearer Token または WriteAccessToken を指定します。WriteAccessToken は対象namespaceへのPOST /dataだけに使用できます。
 func main() {
 	// Configuration
 	config, err := lib.ReadConfig(".env", true)
@@ -41,25 +42,11 @@ func main() {
 		panic(fmt.Sprintf("failed to connect to DB: %s", err))
 	}
 
-	if !db.Migrator().HasTable(&lib.User{}) {
-		log.Println("Database tables not found. Running AutoMigrate...")
-		err = db.AutoMigrate(
-			&lib.Data{},
-			&lib.User{},
-			&lib.UserOneTimeLogin{},
-			&lib.UserBearerToken{},
-			&lib.NamespaceAccessPermission{},
-			&lib.WriteAccessToken{},
-			&lib.AccessLog{},
-			&lib.UserRegistration{},
-		)
-		if err != nil {
-			panic(fmt.Sprintf("failed to migrate db: %s", err))
-		}
-		log.Println("Database migration completed successfully.")
-	} else {
-		log.Println("Database tables already exist. Skipping AutoMigrate for stability.")
+	err = lib.MigrateSchema(db)
+	if err != nil {
+		panic(fmt.Sprintf("failed to migrate db: %s", err))
 	}
+	log.Println("Database migration completed successfully.")
 
 	// Database Instance
 	con := handlers.NewController(db, config)
@@ -79,7 +66,12 @@ func main() {
 	}
 
 	// Web API
-	app := fiber.New()
+	app := fiber.New(fiber.Config{
+		// IoT端末の暴走や巨大JSONによるメモリ枯渇を防ぐ。書き込みAPIの
+		// 論理的な件数・値サイズ制限はハンドラー側でも検証する。
+		BodyLimit:    1024 * 1024,
+		ErrorHandler: handlers.GlobalErrorHandler,
+	})
 
 	docsBasicMiddleware := basicauth.New(basicauth.Config{
 		Users: map[string]string{

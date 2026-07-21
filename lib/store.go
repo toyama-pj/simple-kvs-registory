@@ -20,13 +20,15 @@ func (Data) TableName() string {
 }
 
 type Filter struct {
-	Before    time.Time
-	After     time.Time
-	Namespace uuid.UUID
-	Key       string
-	Limit     int
-	Offset    int
-	TimeOrder string
+	Before     time.Time
+	After      time.Time
+	Namespace  uuid.UUID
+	Key        string
+	Limit      int
+	Offset     int
+	TimeOrder  string
+	CursorTime time.Time
+	CursorID   uuid.UUID
 }
 
 type Database struct {
@@ -43,6 +45,22 @@ func (con Controller) Write(data Data) error {
 	}
 
 	return con.DB.Create(&data).Error
+}
+
+// WriteBatch is all-or-nothing: GORM wraps CreateInBatches in a transaction.
+func (con Controller) WriteBatch(data []Data) error {
+	for i := range data {
+		if data[i].ID == uuid.Nil {
+			newUUID, err := uuid.NewV7()
+			if err != nil {
+				return err
+			}
+			data[i].ID = newUUID
+		}
+	}
+	return con.DB.Transaction(func(tx *gorm.DB) error {
+		return tx.CreateInBatches(&data, 100).Error
+	})
 }
 
 func (con Controller) Read(namespace uuid.UUID) ([]Data, error) {
@@ -73,11 +91,18 @@ func (con Controller) ReadWithFilter(filter Filter) ([]Data, error) {
 	if filter.Key != "" {
 		query = query.Where("key = ?", filter.Key)
 	}
+	if !filter.CursorTime.IsZero() && filter.CursorID != uuid.Nil {
+		if filter.TimeOrder == "ASC" {
+			query = query.Where("time > ? OR (time = ? AND id > ?)", filter.CursorTime, filter.CursorTime, filter.CursorID)
+		} else {
+			query = query.Where("time < ? OR (time = ? AND id < ?)", filter.CursorTime, filter.CursorTime, filter.CursorID)
+		}
+	}
 
 	if filter.TimeOrder == "ASC" {
-		query = query.Order("time ASC")
+		query = query.Order("time ASC").Order("id ASC")
 	} else {
-		query = query.Order("time DESC")
+		query = query.Order("time DESC").Order("id DESC")
 	}
 
 	limit := filter.Limit

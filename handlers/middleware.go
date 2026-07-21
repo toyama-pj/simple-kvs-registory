@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
+	"github.com/google/uuid"
 	"github.com/toyama-pj/simple-kvs-registory/lib"
 )
 
@@ -30,7 +33,12 @@ func (con *Controller) AccessLogMiddlewareHandler(c fiber.Ctx) error {
 		RequestType: c.Method(),
 		StatusCode:  status,
 		ProcessTime: latency,
-		RequestBody: reqBody,
+		RequestBody: sanitizeAccessLogBody(c.Path(), reqBody),
+	}
+	if userID := c.Locals("userId"); userID != nil {
+		accessLog.Actor = fmt.Sprint(userID)
+	} else if tokenID := c.Locals("writeAccessTokenId"); tokenID != nil {
+		accessLog.Actor = fmt.Sprintf("write-token:%v", tokenID)
 	}
 
 	log.Printf("[%s] %s %s %d %fms\n", accessLog.IPAddr, accessLog.RequestType, accessLog.Endpoint, accessLog.StatusCode, accessLog.ProcessTime*1000)
@@ -39,6 +47,22 @@ func (con *Controller) AccessLogMiddlewareHandler(c fiber.Ctx) error {
 	con.ReturnLibController().SaveAccessLogAsync(accessLog)
 
 	return err
+}
+
+func sanitizeAccessLogBody(path string, body interface{}) interface{} {
+	if strings.HasPrefix(path, "/api/v1/data/") {
+		return map[string]interface{}{"redacted": true, "reason": "key-value payload"}
+	}
+	values, ok := body.(map[string]interface{})
+	if !ok {
+		return body
+	}
+	for _, key := range []string{"code", "token", "password"} {
+		if _, exists := values[key]; exists {
+			values[key] = "[REDACTED]"
+		}
+	}
+	return values
 }
 
 func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
@@ -72,8 +96,14 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 	}
 
 	var tokenRecord lib.UserBearerToken
-	err := con.DB.Where("token = ?", tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&tokenRecord).Error
+	tokenHash := lib.HashToken(tokenString)
+	err := con.DB.Where("token_hash = ? OR token = ?", tokenHash, tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&tokenRecord).Error
 	if err == nil {
+		if tokenRecord.TokenHash == "" {
+			// Transparently migrate legacy plaintext credentials after a valid use.
+			tokenRecord.TokenHash = tokenHash
+			tokenRecord.Token = ""
+		}
 		tokenRecord.ExpiresAt = time.Now().Add(time.Hour * 24)
 		err = con.DB.Save(&tokenRecord).Error
 		if err != nil {
@@ -92,8 +122,12 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 	}
 
 	var writeTokenRecord lib.WriteAccessToken
-	if err := con.DB.Where("token = ?", tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&writeTokenRecord).Error; err == nil {
+	if err := con.DB.Where("token_hash = ? OR CAST(token AS VARCHAR) = ?", tokenHash, tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&writeTokenRecord).Error; err == nil {
+		if writeTokenRecord.TokenHash == "" {
+			_ = con.DB.Model(&writeTokenRecord).Updates(map[string]interface{}{"token_hash": tokenHash, "token": uuid.Nil}).Error
+		}
 		c.Locals("writeAccessTokenNamespaceId", writeTokenRecord.NameSpaceID)
+		c.Locals("writeAccessTokenId", writeTokenRecord.ID)
 		return c.Next()
 	}
 
@@ -107,7 +141,23 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 }
 
 func NotFoundMiddlewareHandler(c fiber.Ctx) error {
-	return c.Status(fiber.StatusNotFound).SendString("Not Found")
+	return c.Status(fiber.StatusNotFound).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "Not Found", fiber.StatusNotFound, "The requested endpoint does not exist", c.Path()))
+}
+
+func GlobalErrorHandler(c fiber.Ctx, err error) error {
+	status := fiber.StatusInternalServerError
+	detail := "Internal Server Error"
+	var fiberError *fiber.Error
+	if errors.As(err, &fiberError) {
+		status = fiberError.Code
+		detail = fiberError.Message
+	}
+	title := "Request Failed"
+	if status == fiber.StatusRequestEntityTooLarge {
+		title = "Payload Too Large"
+		detail = "Request body may contain at most 1048576 bytes"
+	}
+	return c.Status(status).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, title, status, detail, c.Path()))
 }
 
 func NotImplementedMiddlewareHandler(c fiber.Ctx) error {

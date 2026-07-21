@@ -3,7 +3,9 @@ package handlers
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/google/uuid"
@@ -19,6 +21,8 @@ func (cont *Controller) CfgHandlersSetup(router fiber.Router) {
 
 func (cont *Controller) CfgMeHandlersSetup(router fiber.Router) {
 	router.Get("/", cont.GetCfgMeHandler)
+	router.Patch("/", cont.PostCfgMeNameHandler)
+	// Backward compatibility for clients using the former non-REST route.
 	router.Post("/name", cont.PostCfgMeNameHandler)
 	router.Post("/namespace/create", cont.PostCfgMeNamespaceCreateHandler)
 	router.Get("/namespace", cont.GetCfgMeNamespaceHandler)
@@ -28,7 +32,7 @@ func (cont *Controller) CfgNamespaceHandlersSetup(router fiber.Router) {
 	router.Post("/invite", cont.PostCfgNamespaceInviteHandler)
 	router.Post("/disinvite", cont.PostCfgNamespaceDisinviteHandler)
 	router.Post("/token/create", cont.PostCfgNamespaceTokenCreateHandler)
-	router.Post("/token/revoke", cont.PostCfgNamespaceTokenRevokeHandler)
+	router.Delete("/tokens/:token_id", cont.DeleteCfgNamespaceTokenHandler)
 }
 
 // GetCfgMeHandler
@@ -83,7 +87,7 @@ func (con *Controller) GetCfgMeHandler(c fiber.Ctx) error {
 }
 
 type PostCfgMeNameRequestBody struct {
-	Name string `json:"name" validate:"required"`
+	Name string `json:"name" validate:"required,max=100" maxLength:"100"`
 }
 
 // PostCfgMeNameHandler
@@ -92,11 +96,14 @@ type PostCfgMeNameRequestBody struct {
 // @Security BearerAuth
 // @Accept	json
 // @Produce	json
+// @Param request body PostCfgMeNameRequestBody true "新しいニックネーム"
 // @Success	204	{object}	nil	"成功（返却ボディなし）"
+// @Failure 400 {object}	lib.RFCErrorResponse
+// @Failure 422 {object}	lib.RFCErrorResponse
 // @Failure 401	{object}	lib.RFCErrorResponse
 // @Failure 403 {object}	lib.RFCErrorResponse
 // @Failure	500	{object}	lib.RFCErrorResponse
-// @Router	/cfg/me [get]
+// @Router	/cfg/me [patch]
 func (con *Controller) PostCfgMeNameHandler(c fiber.Ctx) error {
 	cont := lib.NewController(con.DB, con.Config)
 	userIdVal := c.Locals("userId")
@@ -121,6 +128,9 @@ func (con *Controller) PostCfgMeNameHandler(c fiber.Ctx) error {
 			),
 		)
 	}
+	if strings.TrimSpace(body.Name) == "" || utf8.RuneCountInString(body.Name) > 100 {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid name", fiber.StatusUnprocessableEntity, "name must contain 1 to 100 characters", c.Path()))
+	}
 	err := cont.ChangeUserNameById(userID, body.Name)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(
@@ -133,7 +143,7 @@ func (con *Controller) PostCfgMeNameHandler(c fiber.Ctx) error {
 			),
 		)
 	}
-	return c.Status(fiber.StatusNoContent).JSON("{}")
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 // GetCfgMeNamespaceHandler
@@ -141,15 +151,16 @@ func (con *Controller) PostCfgMeNameHandler(c fiber.Ctx) error {
 // @Description	自分のアクセスできる名前空間を取得する
 // @Security BearerAuth
 // @Produce	json
-// @Param	offset	query	int	false	"返却オフセット"
+// @Param	offset	query	int	false	"返却オフセット（0以上）"
+// @Param	limit	query	int	false	"最大件数（1〜50、デフォルト10）"
 // @Success	200	{object}	lib.GetCfgMeNamespaceResponse	"ネームスペース一覧"
 // @Failure 401	{object}	lib.RFCErrorResponse
 // @Failure 403 {object}	lib.RFCErrorResponse
 // @Failure	500	{object}	lib.RFCErrorResponse
 // @Router	/cfg/me/namespace [get]
 func (con *Controller) GetCfgMeNamespaceHandler(c fiber.Ctx) error {
-	offset, err := strconv.Atoi(c.Get("offset", "0"))
-	if err != nil {
+	offset, err := strconv.Atoi(c.Query("offset", "0"))
+	if err != nil || offset < 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(
 			lib.NewRFCErrorResponse(
 				lib.ErrorInvalidRequest,
@@ -158,6 +169,12 @@ func (con *Controller) GetCfgMeNamespaceHandler(c fiber.Ctx) error {
 				"Invalid offset parameter",
 				c.Path(),
 			),
+		)
+	}
+	limit, err := strconv.Atoi(c.Query("limit", "10"))
+	if err != nil || limit < 1 || limit > 50 {
+		return c.Status(fiber.StatusBadRequest).JSON(
+			lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid Request", fiber.StatusBadRequest, "limit must be between 1 and 50", c.Path()),
 		)
 	}
 
@@ -172,7 +189,7 @@ func (con *Controller) GetCfgMeNamespaceHandler(c fiber.Ctx) error {
 			),
 		)
 	}
-	namespaceIds, err := cont.GetAvailableNamespaceList(userIdVal, offset)
+	namespaceIds, err := cont.GetAvailableNamespaceList(userIdVal, offset, limit)
 	if err != nil {
 		if con.Config.DEVELOPMENT == true {
 			return c.Status(fiber.StatusInternalServerError).JSON(
@@ -205,7 +222,8 @@ func (con *Controller) GetCfgMeNamespaceHandler(c fiber.Ctx) error {
 // @Description	KVS名前空間を作成する
 // @Security BearerAuth
 // @Produce	json
-// @Success	201	{object}	nil	"成功（返却ボディなし）"
+// @Success	201	{object}	CreateNamespaceResponse	"作成された名前空間"
+// @Header 201 {string} Location "作成された名前空間のURI"
 // @Failure 401	{object}	lib.RFCErrorResponse
 // @Failure 403 {object}	lib.RFCErrorResponse
 // @Failure	500	{object}	lib.RFCErrorResponse
@@ -246,11 +264,13 @@ func (con *Controller) PostCfgMeNamespaceCreateHandler(c fiber.Ctx) error {
 		)
 	}
 
-	return c.Status(fiber.StatusCreated).JSON(
-		map[string]interface{}{
-			"namespace_id": namespaceId,
-		},
-	)
+	c.Location("/api/v1/cfg/" + namespaceId.String())
+	return c.Status(fiber.StatusCreated).JSON(CreateNamespaceResponse{NamespaceID: namespaceId, GrantType: "admin"})
+}
+
+type CreateNamespaceResponse struct {
+	NamespaceID uuid.UUID `json:"namespace_id"`
+	GrantType   string    `json:"grant_type" enums:"admin"`
 }
 
 type PostCfgNamespaceInviteRequestBody struct {
@@ -269,10 +289,15 @@ type PostCfgNamespaceInviteRequestBody struct {
 // @Failure 400 {object} lib.RFCErrorResponse
 // @Failure 401 {object} lib.RFCErrorResponse
 // @Failure 403 {object} lib.RFCErrorResponse
+// @Failure 404 {object} lib.RFCErrorResponse
+// @Failure 422 {object} lib.RFCErrorResponse
 // @Failure 500 {object} lib.RFCErrorResponse
 // @Router /cfg/{namespace}/invite [post]
 func (con *Controller) PostCfgNamespaceInviteHandler(c fiber.Ctx) error {
-	namespace := c.Params("namespace")
+	namespace, err := uuid.Parse(c.Params("namespace"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorRequestValueIsNotUUID, "Invalid namespace", fiber.StatusBadRequest, "namespace is expected to be a valid UUID", c.Path()))
+	}
 	userIdVal := c.Locals("userId")
 	userID, ok := userIdVal.(uuid.UUID)
 	if !ok {
@@ -283,18 +308,21 @@ func (con *Controller) PostCfgNamespaceInviteHandler(c fiber.Ctx) error {
 	if err := c.Bind().Body(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid Request", fiber.StatusBadRequest, "Invalid request body", c.Path()))
 	}
+	if !validEmail(req.Email) || (req.GrantType != "r" && req.GrantType != "w" && req.GrantType != "rw" && req.GrantType != "admin") {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid invitation", fiber.StatusUnprocessableEntity, "a valid email and grant_type r, w, rw, or admin are required", c.Path()))
+	}
 
 	conn := con.ReturnLibController()
-	
+
 	targetUser, err := conn.GetUserByMailAddress(req.Email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "User Not Found", fiber.StatusBadRequest, "Target user not found", c.Path()))
+			return c.Status(fiber.StatusNotFound).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "User Not Found", fiber.StatusNotFound, "Target user not found", c.Path()))
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to lookup user", c.Path()))
 	}
 
-	err = conn.PermitUserToAccessNamespace(userID.String(), targetUser.ID.String(), namespace, req.GrantType)
+	err = conn.PermitUserToAccessNamespace(userID.String(), targetUser.ID.String(), namespace.String(), req.GrantType)
 	if err != nil {
 		if err.Error() == "doAsUser is not administrator" {
 			return c.Status(fiber.StatusForbidden).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonUnauthorized, "Forbidden", fiber.StatusForbidden, "You must be an administrator to invite users", c.Path()))
@@ -302,7 +330,7 @@ func (con *Controller) PostCfgNamespaceInviteHandler(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, err.Error(), c.Path()))
 	}
 
-	return c.Status(fiber.StatusNoContent).JSON("{}")
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 type PostCfgNamespaceDisinviteRequestBody struct {
@@ -320,10 +348,15 @@ type PostCfgNamespaceDisinviteRequestBody struct {
 // @Failure 400 {object} lib.RFCErrorResponse
 // @Failure 401 {object} lib.RFCErrorResponse
 // @Failure 403 {object} lib.RFCErrorResponse
+// @Failure 404 {object} lib.RFCErrorResponse
+// @Failure 422 {object} lib.RFCErrorResponse
 // @Failure 500 {object} lib.RFCErrorResponse
 // @Router /cfg/{namespace}/disinvite [post]
 func (con *Controller) PostCfgNamespaceDisinviteHandler(c fiber.Ctx) error {
-	namespace := c.Params("namespace")
+	namespace, err := uuid.Parse(c.Params("namespace"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorRequestValueIsNotUUID, "Invalid namespace", fiber.StatusBadRequest, "namespace is expected to be a valid UUID", c.Path()))
+	}
 	userIdVal := c.Locals("userId")
 	userID, ok := userIdVal.(uuid.UUID)
 	if !ok {
@@ -334,10 +367,13 @@ func (con *Controller) PostCfgNamespaceDisinviteHandler(c fiber.Ctx) error {
 	if err := c.Bind().Body(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid Request", fiber.StatusBadRequest, "Invalid request body", c.Path()))
 	}
+	if !validEmail(req.Email) {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid email", fiber.StatusUnprocessableEntity, "a valid email is required", c.Path()))
+	}
 
 	conn := con.ReturnLibController()
-	
-	_, _, canManage, err := conn.CheckUserPermissionToAccessNamespace(userID.String(), namespace)
+
+	_, _, canManage, err := conn.CheckUserPermissionToAccessNamespace(userID.String(), namespace.String())
 	if err != nil || !canManage {
 		return c.Status(fiber.StatusForbidden).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonUnauthorized, "Forbidden", fiber.StatusForbidden, "You must be an administrator to disinvite users", c.Path()))
 	}
@@ -345,7 +381,7 @@ func (con *Controller) PostCfgNamespaceDisinviteHandler(c fiber.Ctx) error {
 	targetUser, err := conn.GetUserByMailAddress(req.Email)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "User Not Found", fiber.StatusBadRequest, "Target user not found", c.Path()))
+			return c.Status(fiber.StatusNotFound).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "User Not Found", fiber.StatusNotFound, "Target user not found", c.Path()))
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to lookup user", c.Path()))
 	}
@@ -354,7 +390,7 @@ func (con *Controller) PostCfgNamespaceDisinviteHandler(c fiber.Ctx) error {
 		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to disinvite user", c.Path()))
 	}
 
-	return c.Status(fiber.StatusNoContent).JSON("{}")
+	return c.SendStatus(fiber.StatusNoContent)
 }
 
 // PostCfgNamespaceTokenCreateHandler
@@ -363,22 +399,25 @@ func (con *Controller) PostCfgNamespaceDisinviteHandler(c fiber.Ctx) error {
 // @Security BearerAuth
 // @Produce json
 // @Param namespace path string true "ネームスペースID (UUID)"
-// @Success 201 {object} lib.WriteAccessToken "作成されたトークン"
+// @Success 201 {object} lib.WriteAccessTokenResponse "作成されたトークン（tokenはこのレスポンスでのみ表示）"
 // @Failure 400 {object} lib.RFCErrorResponse
 // @Failure 401 {object} lib.RFCErrorResponse
 // @Failure 403 {object} lib.RFCErrorResponse
 // @Failure 500 {object} lib.RFCErrorResponse
 // @Router /cfg/{namespace}/token/create [post]
 func (con *Controller) PostCfgNamespaceTokenCreateHandler(c fiber.Ctx) error {
-	namespace := c.Params("namespace")
+	nsUUID, err := uuid.Parse(c.Params("namespace"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorRequestValueIsNotUUID, "Invalid namespace", fiber.StatusBadRequest, "namespace is expected to be a valid UUID", c.Path()))
+	}
 	userIdVal := c.Locals("userId")
 	userID, ok := userIdVal.(uuid.UUID)
 	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(lib.NewRFCUnauthorizedErrorResponse("unauthorized", c.Path()))
 	}
-	
+
 	conn := con.ReturnLibController()
-	_, _, canManage, err := conn.CheckUserPermissionToAccessNamespace(userID.String(), namespace)
+	_, _, canManage, err := conn.CheckUserPermissionToAccessNamespace(userID.String(), nsUUID.String())
 	if err != nil || !canManage {
 		return c.Status(fiber.StatusForbidden).JSON(
 			lib.NewRFCErrorResponse(
@@ -391,50 +430,51 @@ func (con *Controller) PostCfgNamespaceTokenCreateHandler(c fiber.Ctx) error {
 		)
 	}
 
-	nsUUID, err := uuid.Parse(namespace)
+	token, rawToken, err := lib.NewWriteAccessToken(nsUUID, userID, time.Now().AddDate(10, 0, 0))
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid UUID", fiber.StatusBadRequest, "Invalid namespace UUID", c.Path()))
-	}
-
-	token := lib.WriteAccessToken{
-		NameSpaceID: nsUUID,
-		Token: uuid.New(),
-		CreatedAt: time.Now(),
-		CreatedByUserID: userID,
-		UpdatedAt: time.Now(),
-		ExpiresAt: time.Now().AddDate(10, 0, 0), // Valid for 10 years
+		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorInternalServerError, "Token Error", fiber.StatusInternalServerError, "Failed to generate token", c.Path()))
 	}
 	if err := con.DB.Create(&token).Error; err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to create token", c.Path()))
 	}
-	return c.Status(fiber.StatusCreated).JSON(token)
+	if err := con.DB.Where("token_hash = ?", token.TokenHash).First(&token).Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to load created token", c.Path()))
+	}
+	return c.Status(fiber.StatusCreated).JSON(token.Response(rawToken))
 }
 
-// PostCfgNamespaceTokenRevokeHandler
+// DeleteCfgNamespaceTokenHandler
 // @Summary ネームスペースのWriteAccessTokenを無効化する
-// @Description IoT機器などがデータ送信に使うためのWrite専用Bearer Tokenを削除する
+// @Description 発行レスポンスの数値token_idを指定してWriteAccessTokenを無効化する。秘密のtoken本体はURLへ含めない。
 // @Security BearerAuth
 // @Produce json
 // @Param namespace path string true "ネームスペースID (UUID)"
-// @Param token query string true "無効化するトークン(UUID)"
+// @Param token_id path int true "無効化するトークンID"
 // @Success 204 {object} nil "成功（返却ボディなし）"
 // @Failure 400 {object} lib.RFCErrorResponse
 // @Failure 401 {object} lib.RFCErrorResponse
 // @Failure 403 {object} lib.RFCErrorResponse
+// @Failure 404 {object} lib.RFCErrorResponse
 // @Failure 500 {object} lib.RFCErrorResponse
-// @Router /cfg/{namespace}/token/revoke [post]
-func (con *Controller) PostCfgNamespaceTokenRevokeHandler(c fiber.Ctx) error {
-	namespace := c.Params("namespace")
-	tokenStr := c.Query("token")
+// @Router /cfg/{namespace}/tokens/{token_id} [delete]
+func (con *Controller) DeleteCfgNamespaceTokenHandler(c fiber.Ctx) error {
+	namespace, err := uuid.Parse(c.Params("namespace"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorRequestValueIsNotUUID, "Invalid namespace", fiber.StatusBadRequest, "namespace is expected to be a valid UUID", c.Path()))
+	}
+	tokenID, err := strconv.Atoi(c.Params("token_id"))
+	if err != nil || tokenID < 1 {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid token ID", fiber.StatusBadRequest, "token_id must be a positive integer", c.Path()))
+	}
 
 	userIdVal := c.Locals("userId")
 	userID, ok := userIdVal.(uuid.UUID)
 	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(lib.NewRFCUnauthorizedErrorResponse("unauthorized", c.Path()))
 	}
-	
+
 	conn := con.ReturnLibController()
-	_, _, canManage, err := conn.CheckUserPermissionToAccessNamespace(userID.String(), namespace)
+	_, _, canManage, err := conn.CheckUserPermissionToAccessNamespace(userID.String(), namespace.String())
 	if err != nil || !canManage {
 		return c.Status(fiber.StatusForbidden).JSON(
 			lib.NewRFCErrorResponse(
@@ -447,8 +487,12 @@ func (con *Controller) PostCfgNamespaceTokenRevokeHandler(c fiber.Ctx) error {
 		)
 	}
 
-	if err := con.DB.Where("namespace_id = ? AND token = ?", namespace, tokenStr).Delete(&lib.WriteAccessToken{}).Error; err != nil {
+	result := con.DB.Where("namespace_id = ? AND id = ?", namespace, tokenID).Delete(&lib.WriteAccessToken{})
+	if result.Error != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to revoke token", c.Path()))
 	}
-	return c.Status(fiber.StatusNoContent).JSON("{}")
+	if result.RowsAffected == 0 {
+		return c.Status(fiber.StatusNotFound).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "Token Not Found", fiber.StatusNotFound, "Token was not found in this namespace", c.Path()))
+	}
+	return c.SendStatus(fiber.StatusNoContent)
 }

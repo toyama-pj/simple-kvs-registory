@@ -13,6 +13,7 @@ type AccessLog struct {
 	StatusCode  int         `json:"status_code"`
 	ProcessTime float32     `json:"process_time"`
 	RequestBody interface{} `gorm:"serializer:json;type:varchar" json:"request_body"`
+	Actor       string      `gorm:"type:varchar;column:actor" json:"actor"`
 }
 
 func (AccessLog) TableName() string {

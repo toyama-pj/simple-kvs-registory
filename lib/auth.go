@@ -2,7 +2,9 @@ package lib
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"math/big"
 	"time"
 
@@ -44,7 +46,8 @@ type UserOneTimeLogin struct {
 type UserBearerToken struct {
 	ID        int            `gorm:"primaryKey;column:id;autoIncrement" json:"id"`
 	UserID    uuid.UUID      `gorm:"column:user_id" json:"user_id"`
-	Token     string         `gorm:"type:varchar;column:token" json:"token"`
+	Token     string         `gorm:"type:varchar;column:token" json:"-" swaggerignore:"true"`
+	TokenHash string         `gorm:"type:varchar(64);column:token_hash;uniqueIndex:idx_user_bearer_token_hash" json:"-" swaggerignore:"true"`
 	CreatedAt time.Time      `gorm:"type:timestamptz;column:created_at" json:"created_at"`
 	UpdatedAt time.Time      `gorm:"type:timestamptz;column:updated_at" json:"updated_at"`
 	ExpiresAt time.Time      `gorm:"type:timestamptz;column:expires_at" json:"expires_at"`
@@ -54,7 +57,8 @@ type UserBearerToken struct {
 type WriteAccessToken struct {
 	ID              int            `gorm:"primaryKey;column:id;autoIncrement" json:"id"`
 	NameSpaceID     uuid.UUID      `gorm:"column:namespace_id" json:"namespace_id"`
-	Token           uuid.UUID      `gorm:"column:token" json:"token"`
+	Token           uuid.UUID      `gorm:"column:token" json:"-" swaggerignore:"true"`
+	TokenHash       string         `gorm:"type:varchar(64);column:token_hash;uniqueIndex:idx_write_access_token_hash" json:"-" swaggerignore:"true"`
 	CreatedAt       time.Time      `gorm:"type:timestamptz;column:created_at" json:"created_at"`
 	CreatedByUserID uuid.UUID      `gorm:"column:created_by_user_id" json:"created_by_user_id"`
 	CreatedBy       User           `gorm:"foreignKey:CreatedByUserID" json:"created_by"`
@@ -63,10 +67,44 @@ type WriteAccessToken struct {
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-" swaggerignore:"true"`
 }
 
+type UserBearerTokenResponse struct {
+	ID        int       `json:"id"`
+	UserID    uuid.UUID `json:"user_id"`
+	Token     string    `json:"token"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type WriteAccessTokenResponse struct {
+	ID          int       `json:"id"`
+	NamespaceID uuid.UUID `json:"namespace_id"`
+	Token       string    `json:"token"`
+	CreatedAt   time.Time `json:"created_at"`
+	ExpiresAt   time.Time `json:"expires_at"`
+}
+
+func HashToken(token string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
+}
+
+func NewWriteAccessToken(namespaceID, createdBy uuid.UUID, expiresAt time.Time) (WriteAccessToken, string, error) {
+	raw := uuid.NewString()
+	now := time.Now()
+	return WriteAccessToken{NameSpaceID: namespaceID, TokenHash: HashToken(raw), CreatedAt: now, CreatedByUserID: createdBy, UpdatedAt: now, ExpiresAt: expiresAt}, raw, nil
+}
+
+func (t WriteAccessToken) Response(raw string) WriteAccessTokenResponse {
+	return WriteAccessTokenResponse{ID: t.ID, NamespaceID: t.NameSpaceID, Token: raw, CreatedAt: t.CreatedAt, ExpiresAt: t.ExpiresAt}
+}
+
+func (t UserBearerToken) Response() UserBearerTokenResponse {
+	return UserBearerTokenResponse{ID: t.ID, UserID: t.UserID, Token: t.Token, CreatedAt: t.CreatedAt, ExpiresAt: t.ExpiresAt}
+}
+
 type NamespaceAccessPermission struct {
 	ID          int       `gorm:"primaryKey;column:id;autoIncrement"`
-	NamespaceID uuid.UUID `gorm:"primaryKey;type:uuid;column:namespace_id"`
-	UserID      uuid.UUID `gorm:"primaryKey;type:uuid;column:user_id"`
+	NamespaceID uuid.UUID `gorm:"type:uuid;column:namespace_id;uniqueIndex:idx_namespace_user"`
+	UserID      uuid.UUID `gorm:"type:uuid;column:user_id;uniqueIndex:idx_namespace_user"`
 	GrantType   string    `gorm:"column:grant_type"` // r, w, rw, admin
 	CreatedAt   time.Time `gorm:"type:timestamptz;column:created_at"`
 	DeletedAt   gorm.DeletedAt
@@ -138,13 +176,18 @@ func (c *Controller) CreateUserOneTimeLoginCode(userID uuid.UUID) (string, error
 		return "", err
 	}
 	if count > 0 {
+		// Only the newest code is valid. This also bounds the number of active
+		// secrets kept for a user.
+		if err := c.DB.Where("user_id = ?", userID).Delete(&UserOneTimeLogin{}).Error; err != nil {
+			return "", err
+		}
 		res, err := createRandomDigit(6)
 		if err != nil {
 			return "", err
 		}
 		u := UserOneTimeLogin{
 			UserID:    userID,
-			Token:     res,
+			Token:     HashToken(res),
 			CreatedAt: time.Now(),
 			ExpiresAt: time.Now().Add(time.Minute * 10),
 		}
@@ -171,10 +214,13 @@ func (c *Controller) CreateUserRegistrationCode(name string, email string) (stri
 	if err != nil {
 		return "", err
 	}
+	if err := c.DB.Where("email = ?", email).Delete(&UserRegistration{}).Error; err != nil {
+		return "", err
+	}
 	u := UserRegistration{
 		Name:      name,
 		Email:     email,
-		Token:     res,
+		Token:     HashToken(res),
 		CreatedAt: time.Now(),
 		ExpiresAt: time.Now().Add(time.Minute * 30),
 	}
@@ -186,31 +232,28 @@ func (c *Controller) CreateUserRegistrationCode(name string, email string) (stri
 }
 
 func (c *Controller) VerifyUserRegistrationCode(email string, code string) (*User, error) {
-	var reg UserRegistration
-	err := c.DB.Where("email = ? AND token = ?", email, code).
-		Where("expires_at > ?", time.Now()).
-		Order("created_at desc").
-		First(&reg).Error
-	
-	if err != nil {
-		return nil, ErrInvalidToken
-	}
-
-	// Create user
-	user := User{
-		ID:    uuid.New(),
-		Name:  reg.Name,
-		Email: reg.Email,
-	}
-
-	err = c.DB.Create(&user).Error
+	var user User
+	err := c.DB.Transaction(func(tx *gorm.DB) error {
+		var reg UserRegistration
+		if err := tx.Where("email = ? AND (token = ? OR token = ?)", email, HashToken(code), code).Where("expires_at > ?", time.Now()).Order("created_at desc").First(&reg).Error; err != nil {
+			return ErrInvalidToken
+		}
+		result := tx.Where("id = ? AND expires_at > ?", reg.ID, time.Now()).Delete(&UserRegistration{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrInvalidToken
+		}
+		user = User{ID: uuid.New(), Name: reg.Name, Email: reg.Email}
+		if err := tx.Create(&user).Error; err != nil {
+			return err
+		}
+		return tx.Where("email = ?", email).Delete(&UserRegistration{}).Error
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	// Clean up used and old registration codes for this email
-	c.DB.Where("email = ?", email).Delete(&UserRegistration{})
-
 	return &user, nil
 }
 
@@ -222,7 +265,7 @@ func (c *Controller) GetUserOneTimeLoginCode(email string, token string) (User, 
 	}
 
 	var onetime UserOneTimeLogin
-	err = c.DB.Where("token = ?", token).Where("expires_at > ?", time.Now()).Where("user_id = ?", user.ID).First(&onetime).Error
+	err = c.DB.Where("token = ? OR token = ?", HashToken(token), token).Where("expires_at > ?", time.Now()).Where("user_id = ?", user.ID).First(&onetime).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return User{}, ErrInvalidToken
 	}
@@ -230,9 +273,13 @@ func (c *Controller) GetUserOneTimeLoginCode(email string, token string) (User, 
 		return User{}, err
 	}
 
-	err = c.DB.Model(&onetime).Update("expires_at", time.Now()).Error
-	if err != nil {
-		return User{}, err
+	// Conditional deletion makes one-time use atomic even when callbacks race.
+	result := c.DB.Where("id = ? AND expires_at > ?", onetime.ID, time.Now()).Delete(&UserOneTimeLogin{})
+	if result.Error != nil {
+		return User{}, result.Error
+	}
+	if result.RowsAffected != 1 {
+		return User{}, ErrInvalidToken
 	}
 
 	return user, nil
@@ -251,7 +298,7 @@ func (c *Controller) CreateUserBearerToken(userID uuid.UUID) (UserBearerToken, e
 		}
 		u := UserBearerToken{
 			UserID:    userID,
-			Token:     token,
+			TokenHash: HashToken(token),
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 			ExpiresAt: time.Now().Add(time.Hour * 24),
@@ -260,7 +307,13 @@ func (c *Controller) CreateUserBearerToken(userID uuid.UUID) (UserBearerToken, e
 		if err != nil {
 			return UserBearerToken{}, err
 		}
-		return u, nil
+		// Some dialects do not populate an auto-increment ID after INSERT.
+		var stored UserBearerToken
+		if err := c.DB.Where("token_hash = ?", u.TokenHash).First(&stored).Error; err != nil {
+			return UserBearerToken{}, err
+		}
+		stored.Token = token // transient only; the handler converts this to a response
+		return stored, nil
 	}
 	return UserBearerToken{}, ErrUserNotFound
 }
@@ -328,7 +381,7 @@ func (c *Controller) PermitUserToAccessNamespace(doAsUserId string, targetUserId
 		return err
 	}
 	var doAs NamespaceAccessPermission
-	err = c.DB.Model(&NamespaceAccessPermission{}).Where("namespace_id = ?", namespaceId).First(&doAs).Error
+	err = c.DB.Model(&NamespaceAccessPermission{}).Where("namespace_id = ?", namespaceId).Where("user_id = ?", doAsUserId).Where("deleted_at IS NULL").First(&doAs).Error
 	if err != nil {
 		return err
 	}
@@ -340,7 +393,7 @@ func (c *Controller) PermitUserToAccessNamespace(doAsUserId string, targetUserId
 		return err
 	}
 	var target NamespaceAccessPermission
-	tx := c.DB.Model(&NamespaceAccessPermission{}).Where("namespace_id = ?", namespaceId).First(&target)
+	tx := c.DB.Unscoped().Model(&NamespaceAccessPermission{}).Where("namespace_id = ?", namespaceId).Where("user_id = ?", targetUserId).First(&target)
 	err = tx.Error
 
 	if err == gorm.ErrRecordNotFound { // 新規作成
@@ -366,7 +419,7 @@ func (c *Controller) PermitUserToAccessNamespace(doAsUserId string, targetUserId
 		return err
 	}
 
-	err = tx.Update("grant_type", grantType).Error
+	err = tx.Updates(map[string]interface{}{"grant_type": grantType, "deleted_at": nil}).Error
 	if err != nil {
 		return err
 	}
@@ -384,7 +437,7 @@ func (c *Controller) CheckUserPermissionToAccessNamespace(userId string, namespa
 	case "r":
 		return true, false, false, nil
 	case "w":
-		return true, true, false, nil
+		return false, true, false, nil
 	case "rw":
 		return true, true, false, nil
 	case "admin":
@@ -401,13 +454,13 @@ type _getCfgMeNamespaceResponse struct {
 
 type GetCfgMeNamespaceResponse []_getCfgMeNamespaceResponse
 
-func (c *Controller) GetAvailableNamespaceList(userId uuid.UUID, offset int) (GetCfgMeNamespaceResponse, error) {
+func (c *Controller) GetAvailableNamespaceList(userId uuid.UUID, offset, limit int) (GetCfgMeNamespaceResponse, error) {
 	var res GetCfgMeNamespaceResponse
 	err := c.DB.Model(&NamespaceAccessPermission{}).
 		Select("namespace_id, grant_type").
 		Where("user_id = ?", userId).
 		Offset(offset).
-		Limit(10).
+		Limit(limit).
 		Find(&res).Error
 	if err != nil {
 		return nil, err
