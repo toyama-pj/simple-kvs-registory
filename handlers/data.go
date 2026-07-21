@@ -25,7 +25,7 @@ func (cont *Controller) DataHandlersSetup(router fiber.Router) {
 }
 
 type KeyValueRequestPayload struct {
-	KeyValueWithTime []KeyValuesAtTime `json:"keyValueWithTime" validate:"required,min=1,max=1000"`
+	KeyValueWithTime []KeyValuesAtTime `json:"data" validate:"required,min=1,max=1000"`
 }
 
 type KeyValuesAtTime struct {
@@ -51,7 +51,7 @@ type KeyValueResponsePayload struct {
 			Time  int64  `json:"time" format:"int64"`
 			Value string `json:"value"`
 		} `json:"values"`
-	}
+	} `json:"data"`
 	NextCursor string `json:"next_cursor,omitempty"`
 }
 
