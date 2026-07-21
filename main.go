@@ -73,6 +73,10 @@ func main() {
 		ErrorHandler: handlers.GlobalErrorHandler,
 	})
 
+	app.Get("/", func(c fiber.Ctx) error {
+		return c.SendString("ok!")
+	})
+
 	docsBasicMiddleware := basicauth.New(basicauth.Config{
 		Users: map[string]string{
 			"docs": "{SHA256}" + config.SWAGGER_BASIC,
