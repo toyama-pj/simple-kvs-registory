@@ -55,9 +55,9 @@ type UserBearerToken struct {
 }
 
 type WriteAccessToken struct {
-	ID              int            `gorm:"primaryKey;column:id;autoIncrement" json:"id"`
+	ID              uuid.UUID      `gorm:"primaryKey;type:uuid;column:id" json:"id"`
 	NameSpaceID     uuid.UUID      `gorm:"column:namespace_id" json:"namespace_id"`
-	Token           uuid.UUID      `gorm:"column:token" json:"-" swaggerignore:"true"`
+	Token           string         `gorm:"-" json:"-" swaggerignore:"true"`
 	TokenHash       string         `gorm:"type:varchar(64);column:token_hash;uniqueIndex:idx_write_access_token_hash" json:"-" swaggerignore:"true"`
 	CreatedAt       time.Time      `gorm:"type:timestamptz;column:created_at" json:"created_at"`
 	CreatedByUserID uuid.UUID      `gorm:"column:created_by_user_id" json:"created_by_user_id"`
@@ -76,7 +76,7 @@ type UserBearerTokenResponse struct {
 }
 
 type WriteAccessTokenResponse struct {
-	ID          int       `json:"id"`
+	ID          uuid.UUID `json:"id"`
 	NamespaceID uuid.UUID `json:"namespace_id"`
 	Token       string    `json:"token"`
 	CreatedAt   time.Time `json:"created_at"`
@@ -88,9 +88,13 @@ func HashToken(token string) string {
 }
 
 func NewWriteAccessToken(namespaceID, createdBy uuid.UUID, expiresAt time.Time) (WriteAccessToken, string, error) {
-	raw := uuid.NewString()
+	raw, err := createRandomToken("abcdef0123456789", 32)
+	if err != nil {
+		return WriteAccessToken{}, "", err
+	}
 	now := time.Now()
-	return WriteAccessToken{NameSpaceID: namespaceID, TokenHash: HashToken(raw), CreatedAt: now, CreatedByUserID: createdBy, UpdatedAt: now, ExpiresAt: expiresAt}, raw, nil
+	tokenID := uuid.New()
+	return WriteAccessToken{ID: tokenID, NameSpaceID: namespaceID, TokenHash: HashToken(raw), CreatedAt: now, CreatedByUserID: createdBy, UpdatedAt: now, ExpiresAt: expiresAt}, raw, nil
 }
 
 func (t WriteAccessToken) Response(raw string) WriteAccessTokenResponse {

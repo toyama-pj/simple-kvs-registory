@@ -449,7 +449,7 @@ func (con *Controller) PostCfgNamespaceTokenCreateHandler(c fiber.Ctx) error {
 // @Security BearerAuth
 // @Produce json
 // @Param namespace path string true "ネームスペースID (UUID)"
-// @Param token_id path int true "無効化するトークンID"
+// @Param token_id path string true "無効化するトークンID (UUID)"
 // @Success 204 {object} nil "成功（返却ボディなし）"
 // @Failure 400 {object} lib.RFCErrorResponse
 // @Failure 401 {object} lib.RFCErrorResponse
@@ -462,9 +462,9 @@ func (con *Controller) DeleteCfgNamespaceTokenHandler(c fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorRequestValueIsNotUUID, "Invalid namespace", fiber.StatusBadRequest, "namespace is expected to be a valid UUID", c.Path()))
 	}
-	tokenID, err := strconv.Atoi(c.Params("token_id"))
-	if err != nil || tokenID < 1 {
-		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid token ID", fiber.StatusBadRequest, "token_id must be a positive integer", c.Path()))
+	tokenID, err := uuid.Parse(c.Params("token_id"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorRequestValueIsNotUUID, "Invalid token ID", fiber.StatusBadRequest, "token_id is expected to be a valid UUID", c.Path()))
 	}
 
 	userIdVal := c.Locals("userId")
