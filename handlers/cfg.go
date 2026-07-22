@@ -32,6 +32,7 @@ func (cont *Controller) CfgNamespaceHandlersSetup(router fiber.Router) {
 	router.Post("/invite", cont.PostCfgNamespaceInviteHandler)
 	router.Post("/disinvite", cont.PostCfgNamespaceDisinviteHandler)
 	router.Post("/token/create", cont.PostCfgNamespaceTokenCreateHandler)
+	router.Delete("/tokens", cont.DeleteCfgNamespaceAllTokensHandler)
 	router.Delete("/tokens/:token", cont.DeleteCfgNamespaceTokenHandler)
 }
 
@@ -495,5 +496,51 @@ func (con *Controller) DeleteCfgNamespaceTokenHandler(c fiber.Ctx) error {
 	if result.RowsAffected == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "Token Not Found", fiber.StatusNotFound, "Token was not found in this namespace", c.Path()))
 	}
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// DeleteCfgNamespaceAllTokensHandler
+// @Summary ネームスペースのすべてのWriteAccessTokenを無効化する
+// @Description ネームスペースに紐づくすべてのWriteAccessTokenを一括で無効化する。
+// @Security BearerAuth
+// @Produce json
+// @Param namespace path string true "ネームスペースID (UUID)"
+// @Success 204 {object} nil "成功（返却ボディなし）"
+// @Failure 400 {object} lib.RFCErrorResponse
+// @Failure 401 {object} lib.RFCErrorResponse
+// @Failure 403 {object} lib.RFCErrorResponse
+// @Failure 500 {object} lib.RFCErrorResponse
+// @Router /cfg/{namespace}/tokens [delete]
+func (con *Controller) DeleteCfgNamespaceAllTokensHandler(c fiber.Ctx) error {
+	namespace, err := uuid.Parse(c.Params("namespace"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorRequestValueIsNotUUID, "Invalid namespace", fiber.StatusBadRequest, "namespace is expected to be a valid UUID", c.Path()))
+	}
+
+	userIdVal := c.Locals("userId")
+	userID, ok := userIdVal.(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(lib.NewRFCUnauthorizedErrorResponse("unauthorized", c.Path()))
+	}
+
+	conn := con.ReturnLibController()
+	_, _, canManage, err := conn.CheckUserPermissionToAccessNamespace(userID.String(), namespace.String())
+	if err != nil || !canManage {
+		return c.Status(fiber.StatusForbidden).JSON(
+			lib.NewRFCErrorResponse(
+				lib.ErrorCommonUnauthorized,
+				"Forbidden",
+				fiber.StatusForbidden,
+				"You don't have permission to manage this namespace",
+				c.Path(),
+			),
+		)
+	}
+
+	result := con.DB.Where("namespace_id = ?", namespace).Delete(&lib.WriteAccessToken{})
+	if result.Error != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to revoke tokens", c.Path()))
+	}
+
 	return c.SendStatus(fiber.StatusNoContent)
 }
