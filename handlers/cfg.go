@@ -32,7 +32,7 @@ func (cont *Controller) CfgNamespaceHandlersSetup(router fiber.Router) {
 	router.Post("/invite", cont.PostCfgNamespaceInviteHandler)
 	router.Post("/disinvite", cont.PostCfgNamespaceDisinviteHandler)
 	router.Post("/token/create", cont.PostCfgNamespaceTokenCreateHandler)
-	router.Delete("/tokens/:token_id", cont.DeleteCfgNamespaceTokenHandler)
+	router.Delete("/tokens/:token", cont.DeleteCfgNamespaceTokenHandler)
 }
 
 // GetCfgMeHandler
@@ -445,27 +445,28 @@ func (con *Controller) PostCfgNamespaceTokenCreateHandler(c fiber.Ctx) error {
 
 // DeleteCfgNamespaceTokenHandler
 // @Summary ネームスペースのWriteAccessTokenを無効化する
-// @Description 発行レスポンスの数値token_idを指定してWriteAccessTokenを無効化する。秘密のtoken本体はURLへ含めない。
+// @Description トークン文字列を指定してWriteAccessTokenを無効化する。
 // @Security BearerAuth
 // @Produce json
 // @Param namespace path string true "ネームスペースID (UUID)"
-// @Param token_id path string true "無効化するトークンID (UUID)"
+// @Param token path string true "無効化するトークン文字列"
 // @Success 204 {object} nil "成功（返却ボディなし）"
 // @Failure 400 {object} lib.RFCErrorResponse
 // @Failure 401 {object} lib.RFCErrorResponse
 // @Failure 403 {object} lib.RFCErrorResponse
 // @Failure 404 {object} lib.RFCErrorResponse
 // @Failure 500 {object} lib.RFCErrorResponse
-// @Router /cfg/{namespace}/tokens/{token_id} [delete]
+// @Router /cfg/{namespace}/tokens/{token} [delete]
 func (con *Controller) DeleteCfgNamespaceTokenHandler(c fiber.Ctx) error {
 	namespace, err := uuid.Parse(c.Params("namespace"))
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorRequestValueIsNotUUID, "Invalid namespace", fiber.StatusBadRequest, "namespace is expected to be a valid UUID", c.Path()))
 	}
-	tokenID, err := uuid.Parse(c.Params("token_id"))
-	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorRequestValueIsNotUUID, "Invalid token ID", fiber.StatusBadRequest, "token_id is expected to be a valid UUID", c.Path()))
+	tokenStr := c.Params("token")
+	if tokenStr == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid token", fiber.StatusBadRequest, "token must be provided", c.Path()))
 	}
+	tokenHash := lib.HashToken(tokenStr)
 
 	userIdVal := c.Locals("userId")
 	userID, ok := userIdVal.(uuid.UUID)
@@ -487,7 +488,7 @@ func (con *Controller) DeleteCfgNamespaceTokenHandler(c fiber.Ctx) error {
 		)
 	}
 
-	result := con.DB.Where("namespace_id = ? AND id = ?", namespace, tokenID).Delete(&lib.WriteAccessToken{})
+	result := con.DB.Where("namespace_id = ? AND token_hash = ?", namespace, tokenHash).Delete(&lib.WriteAccessToken{})
 	if result.Error != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to revoke token", c.Path()))
 	}
