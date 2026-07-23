@@ -13,6 +13,10 @@ import (
 )
 
 func (con *Controller) AccessLogMiddlewareHandler(c fiber.Ctx) error {
+	if c.Method() == fiber.MethodGet && (c.Path() == "/" || c.Path() == "/api/v1/") {
+		return c.Next()
+	}
+
 	startTime := time.Now()
 
 	var reqBody interface{}
