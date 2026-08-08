@@ -24,6 +24,9 @@ type Config struct {
 	DATABASE_DSN      string `env:"DATABASE_DSN"`
 
 	SWAGGER_BASIC string `env:"SWAGGER_BASIC"`
+
+	SEMTECH_UDP_BIND_HOST string `env:"SEMTECH_UDP_BIND_HOST"`
+	SEMTECH_UDP_BIND_PORT int    `env:"SEMTECH_UDP_BIND_PORT"`
 }
 
 type Controller struct {
