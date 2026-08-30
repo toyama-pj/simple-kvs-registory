@@ -13,6 +13,11 @@ import (
 
 const deviceSessionKeySize = 16
 
+func ValidateSessionKeyEncryptionKey(value string) error {
+	_, err := decodeMasterKey(value)
+	return err
+}
+
 func decodeMasterKey(value string) ([]byte, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {

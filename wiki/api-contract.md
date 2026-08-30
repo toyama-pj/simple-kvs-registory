@@ -27,6 +27,8 @@ Limits return `429 Too Many Requests`. A multi-instance production deployment mu
 
 ## Namespace and token creation
 
+The primary hierarchy is `Organization -> Namespace -> Device`. A user creates an organization with `POST /organizations`, a namespace with `POST /organizations/{organization}/namespaces`, and a device with `POST /namespaces/{namespace}/devices`. The legacy `/cfg/me/namespace/create` endpoint remains available and creates namespaces in the user's personal organization.
+
 `POST /cfg/me/namespace/create` returns `201 Created`, a `Location` header, and:
 
 ```json
@@ -36,7 +38,7 @@ Limits return `429 Too Many Requests`. A multi-instance production deployment mu
 }
 ```
 
-WriteAccessToken creation returns a numeric `id` and the secret `token`. Store the secret at this point because it cannot be retrieved later. Revoke it without putting the secret in a URL:
+WriteAccessToken creation returns a UUID `id` and the secret `token`. Store the secret at this point because it cannot be retrieved later. Revoke it without putting the secret in a URL:
 
 ```http
 DELETE /api/v1/cfg/{namespace}/tokens/{token_id}
@@ -65,4 +67,12 @@ Reads default to 50 records and accept 1–50. Offset pagination remains availab
 
 ## Logging
 
-Access logs record the authenticated user ID or WriteAccessToken ID as the actor. OTPs, tokens, passwords, and KVS request payloads are not copied to the access-log body. Application and database log retention and access control remain deployment responsibilities.
+Access logs record the authenticated user ID or WriteAccessToken ID as the actor. OTPs, tokens, passwords, AppSKey, NwkSKey, and KVS request payloads are not copied to the access-log body. Application and database log retention and access control remain deployment responsibilities.
+
+## Semtech UDP ingestion
+
+Every received datagram creates a `semtech_udp_log` row with receive time, source IP, packet type, gateway EUI when available, JSON payload, processing error, and `database_committed`. The flag is true when at least one `rxpk` in that datagram committed decoded measurements. A mixed packet can therefore have both `database_committed=true` and an error describing another failed `rxpk`.
+
+PUSH_DATA is acknowledged before database processing. PULL_DATA is answered with PULL_ACK. Malformed packets, invalid JSON/base64, failed CRC, unknown devices, MIC failures, duplicate or invalid frame counters, unsupported LoRaWAN messages, Cayenne LPP parse failures, TX_ACK, and unexpected packet directions are retained in the same log table.
+
+Packet Forwarder transports encrypted LoRaWAN PHYPayload. The built-in decoder supports LoRaWAN 1.0.x data uplinks with a registered DevAddr, AppSKey, and NwkSKey. Session keys are encrypted at rest using the 32-byte `DEVICE_SESSION_KEY_ENCRYPTION_KEY`; changing or losing that master key makes existing device sessions unreadable. OTAA joins, LoRaWAN 1.1 key derivation, and downlinks require an external LoRaWAN Network Server.

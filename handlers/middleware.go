@@ -20,7 +20,7 @@ func (con *Controller) AccessLogMiddlewareHandler(c fiber.Ctx) error {
 	startTime := time.Now()
 
 	var reqBody interface{}
-	if c.Method() == fiber.MethodPost || c.Method() == fiber.MethodPut {
+	if c.Method() == fiber.MethodPost || c.Method() == fiber.MethodPut || c.Method() == fiber.MethodPatch {
 		if err := c.Bind().Body(&reqBody); err != nil {
 			reqBody = make(map[string]interface{})
 		}
@@ -61,7 +61,7 @@ func sanitizeAccessLogBody(path string, body interface{}) interface{} {
 	if !ok {
 		return body
 	}
-	for _, key := range []string{"code", "token", "password"} {
+	for _, key := range []string{"code", "token", "password", "app_s_key", "nwk_s_key"} {
 		if _, exists := values[key]; exists {
 			values[key] = "[REDACTED]"
 		}
@@ -103,13 +103,13 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 	tokenHash := lib.HashToken(tokenString)
 	err := con.DB.Where("token_hash = ? OR token = ?", tokenHash, tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&tokenRecord).Error
 	if err == nil {
+		updates := map[string]interface{}{"expires_at": time.Now().Add(time.Hour * 24)}
 		if tokenRecord.TokenHash == "" {
 			// Transparently migrate legacy plaintext credentials after a valid use.
-			tokenRecord.TokenHash = tokenHash
-			tokenRecord.Token = ""
+			updates["token_hash"] = tokenHash
+			updates["token"] = ""
 		}
-		tokenRecord.ExpiresAt = time.Now().Add(time.Hour * 24)
-		err = con.DB.Save(&tokenRecord).Error
+		err = con.DB.Model(&lib.UserBearerToken{}).Where("id = ?", tokenRecord.ID).Updates(updates).Error
 		if err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(
 				lib.NewRFCErrorResponse(
@@ -126,7 +126,12 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 	}
 
 	var writeTokenRecord lib.WriteAccessToken
-	if err := con.DB.Where("token_hash = ? OR CAST(token AS VARCHAR) = ?", tokenHash, tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&writeTokenRecord).Error; err == nil {
+	writeQuery := con.DB.Where("token_hash = ?", tokenHash).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL")
+	writeErr := writeQuery.First(&writeTokenRecord).Error
+	if writeErr != nil && con.DB.Migrator().HasColumn("write_access_tokens", "token") {
+		writeErr = con.DB.Where("CAST(token AS VARCHAR) = ?", tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&writeTokenRecord).Error
+	}
+	if writeErr == nil {
 		if writeTokenRecord.TokenHash == "" {
 			_ = con.DB.Model(&writeTokenRecord).Updates(map[string]interface{}{"token_hash": tokenHash, "token": uuid.Nil}).Error
 		}

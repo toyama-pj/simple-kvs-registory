@@ -5,24 +5,35 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3000:3000"
+      - "1700:1700/udp"
     env_file:
       - .env
+    environment:
+      DATABASE_PROVIDER: postgres
+      DATABASE_DSN: "host=db user=postgres password=postgres dbname=simple_kvs port=5432 sslmode=disable TimeZone=UTC"
+      SEMTECH_UDP_ENABLED: "true"
+      SEMTECH_UDP_BIND_HOST: 0.0.0.0
+      SEMTECH_UDP_BIND_PORT: "1700"
+    depends_on:
+      db:
+        condition: service_healthy
 
-#  db:
-#    image: postgres:16-alpine
-#    environment:
-#      - POSTGRES_USER=postgres
-#      - POSTGRES_PASSWORD=postgres
-#      - POSTGRES_DB=simple_kvs
-#    volumes:
-#      - pgdata:/var/lib/postgresql/data
-#    ports:
-#      - "5432:5432"
-#    healthcheck:
-#      test: ["CMD-SHELL", "pg_isready -U postgres"]
-#      interval: 5s
-#      timeout: 5s
-#      retries: 5
+  db:
+    image: docker.io/library/postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: simple_kvs
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d simple_kvs"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
 #  pgadmin:
 #    image: dpage/pgadmin4
@@ -38,6 +49,7 @@ services:
   cloudflare:
     image: docker.io/cloudflare/cloudflared:latest
     restart: unless-stopped
+    profiles: ["tunnel"]
     environment:
       - TUNNEL_TOKEN=$CLOUDFLARE_TUNNEL_TOKEN
 

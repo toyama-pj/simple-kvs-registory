@@ -113,3 +113,45 @@ func TestLoginCodeIsSingleUseAndBearerTokenIsHashed(t *testing.T) {
 		t.Fatalf("token was not stored safely: plaintext=%q hash=%q", stored.Token, stored.TokenHash)
 	}
 }
+
+func TestMigrateSchemaBackfillsLegacyNamespaceHierarchy(t *testing.T) {
+	db, err := gorm.Open(database.GetDatabaseDialector("duckdb", ":memory:"), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&lib.User{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE namespace_access_permissions (
+		id INTEGER PRIMARY KEY,
+		namespace_id UUID NOT NULL,
+		user_id UUID NOT NULL,
+		grant_type VARCHAR NOT NULL,
+		created_at TIMESTAMP,
+		deleted_at TIMESTAMP
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	user := lib.User{ID: uuid.New(), Name: "legacy owner", Email: "legacy@example.com"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatal(err)
+	}
+	namespaceID := uuid.New()
+	if err := db.Exec("INSERT INTO namespace_access_permissions (id, namespace_id, user_id, grant_type, created_at) VALUES (?, ?, ?, ?, ?)", 1, namespaceID, user.ID, "admin", time.Now()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := lib.MigrateSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	var namespace lib.Namespace
+	if err := db.First(&namespace, "id = ?", namespaceID).Error; err != nil {
+		t.Fatalf("legacy namespace was not backfilled: %v", err)
+	}
+	var membership lib.OrganizationMembership
+	if err := db.Where("organization_id = ? AND user_id = ?", namespace.OrganizationID, user.ID).First(&membership).Error; err != nil {
+		t.Fatalf("legacy owner membership was not backfilled: %v", err)
+	}
+	if membership.Role != "owner" {
+		t.Fatalf("legacy membership role = %q", membership.Role)
+	}
+}

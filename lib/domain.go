@@ -100,6 +100,8 @@ type OrganizationMembership struct {
 	CreatedAt      time.Time      `gorm:"type:timestamptz;column:created_at" json:"created_at"`
 	UpdatedAt      time.Time      `gorm:"type:timestamptz;column:updated_at" json:"updated_at"`
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-" swaggerignore:"true"`
+	Organization   Organization   `gorm:"foreignKey:OrganizationID;constraint:OnDelete:RESTRICT" json:"-" swaggerignore:"true"`
+	User           User           `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-" swaggerignore:"true"`
 }
 
 func (OrganizationMembership) TableName() string { return "organization_membership" }
@@ -118,6 +120,7 @@ type Namespace struct {
 	CreatedAt      time.Time      `gorm:"type:timestamptz;column:created_at" json:"created_at"`
 	UpdatedAt      time.Time      `gorm:"type:timestamptz;column:updated_at" json:"updated_at"`
 	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-" swaggerignore:"true"`
+	Organization   Organization   `gorm:"foreignKey:OrganizationID;constraint:OnDelete:RESTRICT" json:"-" swaggerignore:"true"`
 }
 
 func (Namespace) TableName() string { return "namespace" }
@@ -145,6 +148,7 @@ type Device struct {
 	CreatedAt          time.Time      `gorm:"type:timestamptz;column:created_at" json:"created_at"`
 	UpdatedAt          time.Time      `gorm:"type:timestamptz;column:updated_at" json:"updated_at"`
 	DeletedAt          gorm.DeletedAt `gorm:"index" json:"-" swaggerignore:"true"`
+	Namespace          Namespace      `gorm:"foreignKey:NamespaceID;constraint:OnDelete:RESTRICT" json:"-" swaggerignore:"true"`
 }
 
 func (Device) TableName() string { return "device" }
@@ -168,6 +172,8 @@ type Measurement struct {
 	Type         uint8      `gorm:"column:type" json:"type"`
 	Name         string     `gorm:"type:varchar(32);column:name" json:"name"`
 	Value        JSONValue  `gorm:"column:value" json:"value" swaggertype:"object"`
+	Device       Device     `gorm:"foreignKey:DeviceID;constraint:OnDelete:RESTRICT" json:"-" swaggerignore:"true"`
+	Namespace    Namespace  `gorm:"foreignKey:NamespaceID;constraint:OnDelete:RESTRICT" json:"-" swaggerignore:"true"`
 }
 
 func (Measurement) TableName() string { return "measurement" }

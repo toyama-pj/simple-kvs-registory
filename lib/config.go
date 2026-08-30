@@ -25,7 +25,7 @@ type Config struct {
 
 	SWAGGER_BASIC string `env:"SWAGGER_BASIC"`
 
-	SEMTECH_UDP_ENABLED   bool   `env:"SEMTECH_UDP_ENABLED" envDefault:"true"`
+	SEMTECH_UDP_ENABLED   bool   `env:"SEMTECH_UDP_ENABLED" envDefault:"false"`
 	SEMTECH_UDP_BIND_HOST string `env:"SEMTECH_UDP_BIND_HOST" envDefault:"0.0.0.0"`
 	SEMTECH_UDP_BIND_PORT int    `env:"SEMTECH_UDP_BIND_PORT" envDefault:"1700"`
 
@@ -54,6 +54,14 @@ func ReadConfig(path string, fallbackToOSEnv bool) (Config, error) {
 	var config Config
 	if err := env.Parse(&config); err != nil {
 		return Config{}, fmt.Errorf("failed to parse environment variables: %w", err)
+	}
+	if config.SEMTECH_UDP_ENABLED {
+		if config.SEMTECH_UDP_BIND_PORT < 1 || config.SEMTECH_UDP_BIND_PORT > 65535 {
+			return Config{}, fmt.Errorf("SEMTECH_UDP_BIND_PORT must be between 1 and 65535")
+		}
+		if err := ValidateSessionKeyEncryptionKey(config.DEVICE_SESSION_KEY_ENCRYPTION_KEY); err != nil {
+			return Config{}, err
+		}
 	}
 
 	return config, nil

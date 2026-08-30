@@ -77,4 +77,9 @@ func TestSanitizeAccessLogBody(t *testing.T) {
 	if data["redacted"] != true {
 		t.Fatalf("data payload was not redacted: %#v", data)
 	}
+
+	device := sanitizeAccessLogBody("/api/v1/namespaces/id/devices", map[string]interface{}{"app_s_key": "secret", "nwk_s_key": "secret"}).(map[string]interface{})
+	if device["app_s_key"] != "[REDACTED]" || device["nwk_s_key"] != "[REDACTED]" {
+		t.Fatalf("device session keys were not redacted: %#v", device)
+	}
 }

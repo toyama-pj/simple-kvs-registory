@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/toyama-pj/simple-kvs-registory/lib"
 	database "github.com/toyama-pj/simple-kvs-registory/lib/db"
 	"gorm.io/gorm"
@@ -55,8 +54,16 @@ func TestPushDataDecryptsCayenneAndCreatesAuditLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	organization := lib.Organization{Name: "test organization"}
+	if err := db.Create(&organization).Error; err != nil {
+		t.Fatal(err)
+	}
+	namespace := lib.Namespace{OrganizationID: organization.ID, Name: "test namespace"}
+	if err := db.Create(&namespace).Error; err != nil {
+		t.Fatal(err)
+	}
 	device := lib.Device{
-		NamespaceID:      uuid.New(),
+		NamespaceID:      namespace.ID,
 		Name:             "field sensor",
 		DevEUI:           "0102030405060708",
 		DevAddr:          "26011BDA",

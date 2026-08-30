@@ -112,6 +112,8 @@ type NamespaceAccessPermission struct {
 	GrantType   string    `gorm:"column:grant_type"` // r, w, rw, admin
 	CreatedAt   time.Time `gorm:"type:timestamptz;column:created_at"`
 	DeletedAt   gorm.DeletedAt
+	Namespace   Namespace `gorm:"foreignKey:NamespaceID;constraint:OnDelete:RESTRICT" json:"-" swaggerignore:"true"`
+	User        User      `gorm:"foreignKey:UserID;constraint:OnDelete:RESTRICT" json:"-" swaggerignore:"true"`
 }
 
 func (UserOneTimeLogin) TableName() string {
@@ -452,8 +454,10 @@ func (c *Controller) CheckUserPermissionToAccessNamespace(userId string, namespa
 }
 
 type _getCfgMeNamespaceResponse struct {
-	NamespaceID uuid.UUID `gorm:"column:namespace_id" json:"namespace_id"`
-	GrantType   string    `gorm:"column:grant_type" json:"grant_type"`
+	NamespaceID    uuid.UUID `gorm:"column:namespace_id" json:"namespace_id"`
+	OrganizationID uuid.UUID `gorm:"column:organization_id" json:"organization_id"`
+	Name           string    `gorm:"column:name" json:"name"`
+	GrantType      string    `gorm:"column:grant_type" json:"grant_type"`
 }
 
 type GetCfgMeNamespaceResponse []_getCfgMeNamespaceResponse
@@ -461,8 +465,9 @@ type GetCfgMeNamespaceResponse []_getCfgMeNamespaceResponse
 func (c *Controller) GetAvailableNamespaceList(userId uuid.UUID, offset, limit int) (GetCfgMeNamespaceResponse, error) {
 	var res GetCfgMeNamespaceResponse
 	err := c.DB.Model(&NamespaceAccessPermission{}).
-		Select("namespace_id, grant_type").
-		Where("user_id = ?", userId).
+		Select("namespace_access_permissions.namespace_id, namespace.organization_id, namespace.name, namespace_access_permissions.grant_type").
+		Joins("LEFT JOIN namespace ON namespace.id = namespace_access_permissions.namespace_id AND namespace.deleted_at IS NULL").
+		Where("namespace_access_permissions.user_id = ? AND namespace_access_permissions.deleted_at IS NULL", userId).
 		Offset(offset).
 		Limit(limit).
 		Find(&res).Error
@@ -473,11 +478,20 @@ func (c *Controller) GetAvailableNamespaceList(userId uuid.UUID, offset, limit i
 }
 
 func (c *Controller) CreateNamespace(userId uuid.UUID) (uuid.UUID, error) {
-	organization, err := c.CreateOrganization(userId, "Personal")
-	if err != nil {
+	var membership OrganizationMembership
+	err := c.DB.Joins("JOIN organization ON organization.id = organization_membership.organization_id AND organization.deleted_at IS NULL").
+		Where("organization_membership.user_id = ? AND organization_membership.role = ? AND organization_membership.deleted_at IS NULL AND organization.name = ?", userId, "owner", "Personal").
+		Order("organization_membership.created_at").First(&membership).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		organization, createErr := c.CreateOrganization(userId, "Personal")
+		if createErr != nil {
+			return uuid.Nil, createErr
+		}
+		membership.OrganizationID = organization.ID
+	} else if err != nil {
 		return uuid.Nil, err
 	}
-	namespace, err := c.CreateNamespaceForOrganization(userId, organization.ID, "Default")
+	namespace, err := c.CreateNamespaceForOrganization(userId, membership.OrganizationID, "Default")
 	if err != nil {
 		return uuid.Nil, err
 	}

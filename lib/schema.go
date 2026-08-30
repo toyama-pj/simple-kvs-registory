@@ -35,8 +35,8 @@ func MigrateSchema(db *gorm.DB) error {
 	}
 	for _, model := range models {
 		if !db.Migrator().HasTable(model) {
-			if err := db.AutoMigrate(model); err != nil {
-				return fmt.Errorf("create missing table: %w", err)
+			if err := db.Migrator().CreateTable(model); err != nil {
+				return fmt.Errorf("create missing table %T: %w", model, err)
 			}
 		}
 	}
