@@ -34,6 +34,7 @@ COPY --from=builder /app/simple-kvs-registry .
 
 # Copy swagger docs if they exist
 COPY --from=builder /app/docs /app/docs
+COPY --from=builder /app/web /app/web
 
 # Default port
 EXPOSE 3000

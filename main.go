@@ -13,6 +13,7 @@ import (
 	swaggo "github.com/gofiber/contrib/v3/swaggo"
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/basicauth"
+	staticMiddleware "github.com/gofiber/fiber/v3/middleware/static"
 	"github.com/toyama-pj/simple-kvs-registory/handlers"
 	"github.com/toyama-pj/simple-kvs-registory/lib"
 	databaseDialect "github.com/toyama-pj/simple-kvs-registory/lib/db"
@@ -134,6 +135,14 @@ func buildApp(database *gorm.DB, config lib.Config) *fiber.App {
 
 	docsBasicMiddleware := basicauth.New(basicauth.Config{Users: map[string]string{"docs": "{SHA256}" + config.SWAGGER_BASIC}})
 	app.Get("/docs/*", docsBasicMiddleware, swaggo.HandlerDefault)
+	webHeaders := func(c fiber.Ctx) error {
+		c.Set(fiber.HeaderContentSecurityPolicy, "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+		c.Set(fiber.HeaderXContentTypeOptions, "nosniff")
+		c.Set(fiber.HeaderReferrerPolicy, "no-referrer")
+		return c.Next()
+	}
+	app.Get("/", webHeaders, staticMiddleware.New("./web/index.html"))
+	app.Get("/assets/*", webHeaders, staticMiddleware.New("./web/assets"))
 	app.Use(controller.AccessLogMiddlewareHandler)
 
 	v1 := app.Group("/api/v1")
@@ -145,7 +154,6 @@ func buildApp(database *gorm.DB, config lib.Config) *fiber.App {
 	v1.Route("/namespaces", controller.NamespaceHandlersSetup)
 	v1.Route("/devices", controller.DeviceHandlersSetup)
 
-	app.Get("/", func(c fiber.Ctx) error { return c.SendString("ok!") })
 	app.Use(handlers.NotFoundMiddlewareHandler)
 	return app
 }

@@ -32,6 +32,8 @@ docker compose up --build
 
 公開ポートは Web API の TCP `3000` と Semtech UDP の UDP `1700` です。Compose は PostgreSQL 16 を起動し、アプリの接続先を自動的に `db:5432` へ上書きします。
 
+ブラウザで `http://localhost:3000/` を開くと、ログイン、Namespaceごとの計測値閲覧、Device追加、パスキー管理を行える簡易Web UIを利用できます。UIはFiberから静的配信されるHTML/CSS/JavaScriptで、フロントエンドのビルド工程や外部CDNはありません。
+
 ローカルで直接起動する場合は `.env` の `DATABASE_DSN` をローカル PostgreSQL に合わせ、次を実行します。
 
 ```bash
@@ -50,12 +52,28 @@ make run
 
 対応する Cayenne LPP 型は digital input/output、analog input/output、illuminance、presence、temperature、relative humidity、accelerometer、barometric pressure、gyrometer、GPS です。
 
+## ログインとパスキー
+
+初回はメールアドレス宛ての6桁コードで登録またはログインします。ブラウザUIのセッションはHttpOnly・SameSite=Strict Cookieで保持され、ログアウト時にはサーバー側のBearer Tokenも失効します。APIクライアント向けには、従来どおりログイン応答のBearer Tokenも返します。
+
+ログイン後の「パスキー」画面で端末のパスキーを登録すると、次回からメールアドレスなしでログインできます。パスキーを有効にする場合は次を設定してください。
+
+- `PASSKEY_RP_ID`: スキームとポートを除いた公開ドメイン
+- `PASSKEY_RP_ORIGINS`: ブラウザからアクセスする完全一致のOrigin。複数の場合はカンマ区切り
+- `SESSION_COOKIE_SECURE`: 本番HTTPSでは`true`
+
+本番環境はHTTPSが必須です。HTTPでのWebAuthn利用は`localhost`開発時だけに限定し、RP IDは運用開始後に変更しないでください。既存パスキーが使えなくなります。
+
 ## 主な API
 
 すべて `/api/v1` 配下です。管理・閲覧 API は User Bearer Token を必要とします。
 
 | Method | Path | 用途 |
 | --- | --- | --- |
+| `POST` | `/auth/login`, `/auth/login/callback` | メールコードの発行・ログイン |
+| `POST` | `/auth/passkeys/login/begin`, `/auth/passkeys/login/finish` | パスキーログイン |
+| `POST` | `/auth/passkeys/register/begin`, `/auth/passkeys/register/finish` | パスキー登録 |
+| `GET`, `DELETE` | `/auth/passkeys`, `/auth/passkeys/{id}` | パスキー一覧・削除 |
 | `POST` | `/organizations` | Organization 作成 |
 | `GET` | `/organizations` | 所属 Organization 一覧 |
 | `POST` | `/organizations/{id}/namespaces` | Namespace 作成 |
