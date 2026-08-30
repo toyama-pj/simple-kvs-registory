@@ -12,6 +12,24 @@ Authorization: Bearer TOKEN
 
 User Bearer Tokens can use configuration APIs and the data operations allowed by their namespace grant. WriteAccessTokens can only call `POST /api/v1/data/{namespace}` for the namespace that issued the token. Bearer tokens and OTPs are stored as SHA-256 hashes; newly issued Bearer credentials are returned only at creation, and legacy plaintext Bearer records are migrated to a hash after successful authentication.
 
+The browser UI also receives the same user session in an HttpOnly, SameSite=Strict cookie. Cookie authentication never applies to WriteAccessTokens. `POST /auth/logout` revokes the current database token and clears the cookie; API clients may continue to use the returned Bearer token in the Authorization header.
+
+### Passkeys
+
+Passkey registration requires an already authenticated user and uses:
+
+1. `POST /auth/passkeys/register/begin`
+2. `POST /auth/passkeys/register/finish` with the returned ceremony ID in `X-Passkey-Ceremony-ID`
+
+Subsequent passwordless login uses a discoverable credential and does not require an email address:
+
+1. `POST /auth/passkeys/login/begin`
+2. `POST /auth/passkeys/login/finish` with the ceremony ID in `X-Passkey-Ceremony-ID`
+
+Registration requires a resident key and user verification. The exact WebAuthn session returned by the begin operation is stored in PostgreSQL for five minutes and atomically consumed before finish validation, preventing challenge replay across application instances. Credential records retain the complete WebAuthn credential JSON and are updated after successful authentication so signature counters and backup flags are not lost.
+
+`PASSKEY_RP_ID` is the effective domain without scheme or port. Every exact browser origin must be listed in `PASSKEY_RP_ORIGINS`. Production origins must use HTTPS; HTTP is suitable only for localhost development. Losing the configured RP ID or changing it to an unrelated domain makes existing passkeys unusable.
+
 Login and registration codes contain six decimal digits. Login codes expire after 10 minutes and registration codes after 30 minutes. Issuing a new code invalidates older codes for the same user or email, and verification consumes a code atomically so it cannot be reused.
 
 Authentication endpoints are limited independently per source IP and per normalized email address in each application process:

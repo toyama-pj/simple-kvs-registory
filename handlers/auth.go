@@ -36,6 +36,14 @@ func (cont *Controller) AuthHandlersSetup(router fiber.Router) {
 	router.Post("/login/callback", cont.authIPLimiter(5), cont.authEmailLimiter(5), cont.PostLoginHandler)
 	router.Post("/register", cont.authIPLimiter(3), cont.authEmailLimiter(3), cont.PostRegisterHandler)
 	router.Post("/register/callback", cont.authIPLimiter(5), cont.authEmailLimiter(5), cont.PostRegisterCallbackHandler)
+	router.Post("/logout", cont.AuthenticationMiddlewareHandler, cont.PostLogoutHandler)
+	router.Get("/passkeys/config", cont.GetPasskeyConfigHandler)
+	router.Post("/passkeys/login/begin", cont.authIPLimiter(10), cont.BeginPasskeyLoginHandler)
+	router.Post("/passkeys/login/finish", cont.authIPLimiter(10), cont.FinishPasskeyLoginHandler)
+	router.Post("/passkeys/register/begin", cont.AuthenticationMiddlewareHandler, cont.BeginPasskeyRegistrationHandler)
+	router.Post("/passkeys/register/finish", cont.AuthenticationMiddlewareHandler, cont.FinishPasskeyRegistrationHandler)
+	router.Get("/passkeys", cont.AuthenticationMiddlewareHandler, cont.GetPasskeysHandler)
+	router.Delete("/passkeys/:passkey", cont.AuthenticationMiddlewareHandler, cont.DeletePasskeyHandler)
 }
 
 func (cont *Controller) authIPLimiter(max int) fiber.Handler {
@@ -235,6 +243,7 @@ func (con *Controller) PostLoginHandler(c fiber.Ctx) error {
 		)
 	}
 
+	con.setSessionCookie(c, token.Token, token.ExpiresAt)
 	return c.Status(fiber.StatusOK).JSON(token.Response())
 }
 
@@ -390,7 +399,51 @@ func (con *Controller) PostRegisterCallbackHandler(c fiber.Ctx) error {
 		)
 	}
 
+	con.setSessionCookie(c, token.Token, token.ExpiresAt)
 	return c.Status(fiber.StatusCreated).JSON(token.Response())
+}
+
+// PostLogoutHandler revokes the current user session and clears its cookie.
+// @Summary Log out
+// @Security BearerAuth
+// @Success 204
+// @Router /auth/logout [post]
+func (con *Controller) PostLogoutHandler(c fiber.Ctx) error {
+	if tokenID, ok := c.Locals("userBearerTokenId").(int); ok {
+		if err := con.DB.Where("id = ?", tokenID).Delete(&lib.UserBearerToken{}).Error; err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "Database Error", fiber.StatusInternalServerError, "failed to revoke session", c.Path()))
+		}
+	}
+	con.clearSessionCookie(c)
+	return c.SendStatus(fiber.StatusNoContent)
+}
+
+const sessionCookieName = "simplechirp_session"
+
+func (con *Controller) setSessionCookie(c fiber.Ctx, token string, expiresAt time.Time) {
+	c.Cookie(&fiber.Cookie{
+		Name:     sessionCookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  expiresAt,
+		MaxAge:   max(0, int(time.Until(expiresAt).Seconds())),
+		HTTPOnly: true,
+		Secure:   con.Config.SESSION_COOKIE_SECURE,
+		SameSite: "Strict",
+	})
+}
+
+func (con *Controller) clearSessionCookie(c fiber.Ctx) {
+	c.Cookie(&fiber.Cookie{
+		Name:     sessionCookieName,
+		Value:    "",
+		Path:     "/",
+		Expires:  time.Unix(0, 0),
+		MaxAge:   -1,
+		HTTPOnly: true,
+		Secure:   con.Config.SESSION_COOKIE_SECURE,
+		SameSite: "Strict",
+	})
 }
 
 func validEmail(value string) bool {

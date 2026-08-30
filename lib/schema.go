@@ -15,6 +15,8 @@ import (
 func MigrateSchema(db *gorm.DB) error {
 	models := []interface{}{
 		&User{},
+		&PasskeyCredential{},
+		&PasskeyCeremony{},
 		&Organization{},
 		&OrganizationMembership{},
 		&Namespace{},

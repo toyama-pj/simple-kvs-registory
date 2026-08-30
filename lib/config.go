@@ -25,6 +25,12 @@ type Config struct {
 
 	SWAGGER_BASIC string `env:"SWAGGER_BASIC"`
 
+	PASSKEY_ENABLED         bool     `env:"PASSKEY_ENABLED" envDefault:"false"`
+	PASSKEY_RP_ID           string   `env:"PASSKEY_RP_ID"`
+	PASSKEY_RP_DISPLAY_NAME string   `env:"PASSKEY_RP_DISPLAY_NAME" envDefault:"Simple Chirp"`
+	PASSKEY_RP_ORIGINS      []string `env:"PASSKEY_RP_ORIGINS" envSeparator:","`
+	SESSION_COOKIE_SECURE   bool     `env:"SESSION_COOKIE_SECURE" envDefault:"true"`
+
 	SEMTECH_UDP_ENABLED   bool   `env:"SEMTECH_UDP_ENABLED" envDefault:"false"`
 	SEMTECH_UDP_BIND_HOST string `env:"SEMTECH_UDP_BIND_HOST" envDefault:"0.0.0.0"`
 	SEMTECH_UDP_BIND_PORT int    `env:"SEMTECH_UDP_BIND_PORT" envDefault:"1700"`
@@ -61,6 +67,11 @@ func ReadConfig(path string, fallbackToOSEnv bool) (Config, error) {
 		}
 		if err := ValidateSessionKeyEncryptionKey(config.DEVICE_SESSION_KEY_ENCRYPTION_KEY); err != nil {
 			return Config{}, err
+		}
+	}
+	if config.PASSKEY_ENABLED {
+		if config.PASSKEY_RP_ID == "" || len(config.PASSKEY_RP_ORIGINS) == 0 {
+			return Config{}, fmt.Errorf("PASSKEY_RP_ID and PASSKEY_RP_ORIGINS are required when passkeys are enabled")
 		}
 	}
 

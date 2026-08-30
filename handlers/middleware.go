@@ -57,6 +57,9 @@ func sanitizeAccessLogBody(path string, body interface{}) interface{} {
 	if strings.HasPrefix(path, "/api/v1/data/") {
 		return map[string]interface{}{"redacted": true, "reason": "key-value payload"}
 	}
+	if strings.Contains(path, "/auth/passkeys/") {
+		return map[string]interface{}{"redacted": true, "reason": "WebAuthn ceremony payload"}
+	}
 	values, ok := body.(map[string]interface{})
 	if !ok {
 		return body
@@ -71,6 +74,13 @@ func sanitizeAccessLogBody(path string, body interface{}) interface{} {
 
 func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 	authHeader := c.Get("Authorization")
+	usingCookie := false
+	if authHeader == "" {
+		if cookieToken := c.Cookies(sessionCookieName); cookieToken != "" {
+			authHeader = "Bearer " + cookieToken
+			usingCookie = true
+		}
+	}
 	if authHeader == "" {
 		return c.Status(fiber.StatusUnauthorized).JSON(
 			lib.NewRFCUnauthorizedErrorResponse(
@@ -103,7 +113,8 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 	tokenHash := lib.HashToken(tokenString)
 	err := con.DB.Where("token_hash = ? OR token = ?", tokenHash, tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&tokenRecord).Error
 	if err == nil {
-		updates := map[string]interface{}{"expires_at": time.Now().Add(time.Hour * 24)}
+		newExpiry := time.Now().Add(time.Hour * 24)
+		updates := map[string]interface{}{"expires_at": newExpiry}
 		if tokenRecord.TokenHash == "" {
 			// Transparently migrate legacy plaintext credentials after a valid use.
 			updates["token_hash"] = tokenHash
@@ -122,6 +133,10 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 			)
 		}
 		c.Locals("userId", tokenRecord.UserID)
+		c.Locals("userBearerTokenId", tokenRecord.ID)
+		if usingCookie {
+			con.setSessionCookie(c, tokenString, newExpiry)
+		}
 		return c.Next()
 	}
 
