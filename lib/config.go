@@ -25,8 +25,11 @@ type Config struct {
 
 	SWAGGER_BASIC string `env:"SWAGGER_BASIC"`
 
-	SEMTECH_UDP_BIND_HOST string `env:"SEMTECH_UDP_BIND_HOST"`
-	SEMTECH_UDP_BIND_PORT int    `env:"SEMTECH_UDP_BIND_PORT"`
+	SEMTECH_UDP_ENABLED   bool   `env:"SEMTECH_UDP_ENABLED" envDefault:"true"`
+	SEMTECH_UDP_BIND_HOST string `env:"SEMTECH_UDP_BIND_HOST" envDefault:"0.0.0.0"`
+	SEMTECH_UDP_BIND_PORT int    `env:"SEMTECH_UDP_BIND_PORT" envDefault:"1700"`
+
+	DEVICE_SESSION_KEY_ENCRYPTION_KEY string `env:"DEVICE_SESSION_KEY_ENCRYPTION_KEY"`
 }
 
 type Controller struct {

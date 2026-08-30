@@ -1,6 +1,18 @@
 package semtech
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"time"
+)
+
+const (
+	IdentifierPushData = 0x00
+	IdentifierPushAck  = 0x01
+	IdentifierPullData = 0x02
+	IdentifierPullResp = 0x03
+	IdentifierPullAck  = 0x04
+	IdentifierTxAck    = 0x05
+)
 
 type PayloadData map[string]any
 type GatewayEUI [8]byte
@@ -45,4 +57,16 @@ type SemtechTxAckPacket struct {
 	Identifier  byte // IdentifierTxAck (0x05)
 	GatewayEUI  GatewayEUI
 	Payload     json.RawMessage
+}
+
+type PushDataPayload struct {
+	RxPackets []RxPacket      `json:"rxpk"`
+	Stat      json.RawMessage `json:"stat,omitempty"`
+}
+
+type RxPacket struct {
+	Time *time.Time `json:"time,omitempty"`
+	Stat int        `json:"stat"`
+	Size int        `json:"size"`
+	Data string     `json:"data"`
 }
