@@ -473,14 +473,13 @@ func (c *Controller) GetAvailableNamespaceList(userId uuid.UUID, offset, limit i
 }
 
 func (c *Controller) CreateNamespace(userId uuid.UUID) (uuid.UUID, error) {
-	namespaceId := uuid.New()
-	err := c.DB.Create(&NamespaceAccessPermission{
-		NamespaceID: namespaceId,
-		UserID:      userId,
-		GrantType:   "admin",
-	}).Error
+	organization, err := c.CreateOrganization(userId, "Personal")
 	if err != nil {
 		return uuid.Nil, err
 	}
-	return namespaceId, nil
+	namespace, err := c.CreateNamespaceForOrganization(userId, organization.ID, "Default")
+	if err != nil {
+		return uuid.Nil, err
+	}
+	return namespace.ID, nil
 }

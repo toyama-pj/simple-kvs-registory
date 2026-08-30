@@ -1,8 +1,10 @@
 package lib
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -12,8 +14,14 @@ import (
 // schema; missing tables are still created normally.
 func MigrateSchema(db *gorm.DB) error {
 	models := []interface{}{
-		&Data{},
 		&User{},
+		&Organization{},
+		&OrganizationMembership{},
+		&Namespace{},
+		&Device{},
+		&Measurement{},
+		&SemtechUDPLog{},
+		&Data{},
 		&UserOneTimeLogin{},
 		&UserBearerToken{},
 		&NamespaceAccessPermission{},
@@ -62,6 +70,47 @@ func MigrateSchema(db *gorm.DB) error {
 			if err := db.Migrator().CreateIndex(index.model, index.name); err != nil {
 				return fmt.Errorf("create index %s: %w", index.name, err)
 			}
+		}
+	}
+	return backfillLegacyNamespaces(db)
+}
+
+// Older releases represented a namespace only by IDs in permission rows.
+// Preserve those IDs while giving each legacy namespace a real parent
+// organization and an owner.
+func backfillLegacyNamespaces(db *gorm.DB) error {
+	var namespaceIDs []uuid.UUID
+	if err := db.Model(&NamespaceAccessPermission{}).Distinct("namespace_id").Pluck("namespace_id", &namespaceIDs).Error; err != nil {
+		return fmt.Errorf("list legacy namespaces: %w", err)
+	}
+	for _, namespaceID := range namespaceIDs {
+		var count int64
+		if err := db.Model(&Namespace{}).Where("id = ?", namespaceID).Count(&count).Error; err != nil {
+			return fmt.Errorf("check legacy namespace %s: %w", namespaceID, err)
+		}
+		if count != 0 {
+			continue
+		}
+		if err := db.Transaction(func(tx *gorm.DB) error {
+			var ownerGrant NamespaceAccessPermission
+			err := tx.Where("namespace_id = ? AND grant_type = ? AND deleted_at IS NULL", namespaceID, "admin").Order("id").First(&ownerGrant).Error
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				err = tx.Where("namespace_id = ? AND deleted_at IS NULL", namespaceID).Order("id").First(&ownerGrant).Error
+			}
+			if err != nil {
+				return err
+			}
+			organization := Organization{Name: "Migrated organization"}
+			if err := tx.Create(&organization).Error; err != nil {
+				return err
+			}
+			membership := OrganizationMembership{OrganizationID: organization.ID, UserID: ownerGrant.UserID, Role: "owner"}
+			if err := tx.Create(&membership).Error; err != nil {
+				return err
+			}
+			return tx.Create(&Namespace{ID: namespaceID, OrganizationID: organization.ID, Name: "Migrated namespace"}).Error
+		}); err != nil {
+			return fmt.Errorf("backfill legacy namespace %s: %w", namespaceID, err)
 		}
 	}
 	return nil

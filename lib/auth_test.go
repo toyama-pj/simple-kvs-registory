@@ -40,6 +40,21 @@ func TestNamespacePermissionChecksExactActorAndTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var namespace lib.Namespace
+	if err := controller.DB.First(&namespace, "id = ?", namespaceID).Error; err != nil {
+		t.Fatalf("namespace does not have a domain row: %v", err)
+	}
+	var organization lib.Organization
+	if err := controller.DB.First(&organization, "id = ?", namespace.OrganizationID).Error; err != nil {
+		t.Fatalf("namespace does not have an organization: %v", err)
+	}
+	var membership lib.OrganizationMembership
+	if err := controller.DB.Where("organization_id = ? AND user_id = ?", organization.ID, admin.ID).First(&membership).Error; err != nil {
+		t.Fatalf("namespace creator is not an organization member: %v", err)
+	}
+	if membership.Role != "owner" {
+		t.Fatalf("organization role = %q, want owner", membership.Role)
+	}
 
 	if err := controller.PermitUserToAccessNamespace(outsider.ID.String(), target.ID.String(), namespaceID.String(), "r"); err == nil {
 		t.Fatal("non-admin was allowed to grant access")
