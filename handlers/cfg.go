@@ -29,6 +29,7 @@ func (cont *Controller) CfgMeHandlersSetup(router fiber.Router) {
 }
 
 func (cont *Controller) CfgNamespaceHandlersSetup(router fiber.Router) {
+	router.Get("/members", cont.GetCfgNamespaceMembersHandler)
 	router.Post("/invite", cont.PostCfgNamespaceInviteHandler)
 	router.Post("/disinvite", cont.PostCfgNamespaceDisinviteHandler)
 	router.Post("/token/create", cont.PostCfgNamespaceTokenCreateHandler)
@@ -279,6 +280,53 @@ type PostCfgNamespaceInviteRequestBody struct {
 	GrantType string `json:"grant_type" validate:"required,oneof=r w rw admin"`
 }
 
+type NamespaceMemberResponse struct {
+	UserID    uuid.UUID `gorm:"column:user_id" json:"user_id"`
+	Name      string    `gorm:"column:name" json:"name"`
+	Email     string    `gorm:"column:email" json:"email"`
+	GrantType string    `gorm:"column:grant_type" json:"grant_type"`
+	CreatedAt time.Time `gorm:"column:created_at" json:"created_at"`
+}
+
+type NamespaceMembersResponse struct {
+	Data []NamespaceMemberResponse `json:"data"`
+}
+
+// GetCfgNamespaceMembersHandler lists members for namespace administrators.
+// @Summary List namespace members
+// @Security BearerAuth
+// @Produce json
+// @Param namespace path string true "Namespace ID"
+// @Success 200 {object} NamespaceMembersResponse
+// @Failure 403 {object} lib.RFCErrorResponse
+// @Router /cfg/{namespace}/members [get]
+func (con *Controller) GetCfgNamespaceMembersHandler(c fiber.Ctx) error {
+	namespace, err := uuid.Parse(c.Params("namespace"))
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorRequestValueIsNotUUID, "Invalid namespace", fiber.StatusBadRequest, "namespace is expected to be a valid UUID", c.Path()))
+	}
+	userID, ok := c.Locals("userId").(uuid.UUID)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(lib.NewRFCUnauthorizedErrorResponse("unauthorized", c.Path()))
+	}
+	_, _, canManage, err := con.ReturnLibController().CheckUserPermissionToAccessNamespace(userID.String(), namespace.String())
+	if err != nil || !canManage {
+		return c.Status(fiber.StatusForbidden).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonUnauthorized, "Forbidden", fiber.StatusForbidden, "You must be an administrator to list members", c.Path()))
+	}
+
+	members := make([]NamespaceMemberResponse, 0)
+	err = con.DB.Table("namespace_access_permissions").
+		Select(`"user".id AS user_id, "user".name, "user".email, namespace_access_permissions.grant_type, namespace_access_permissions.created_at`).
+		Joins(`JOIN "user" ON "user".id = namespace_access_permissions.user_id AND "user".deleted_at IS NULL`).
+		Where("namespace_access_permissions.namespace_id = ? AND namespace_access_permissions.deleted_at IS NULL", namespace).
+		Order("namespace_access_permissions.created_at, namespace_access_permissions.id").
+		Scan(&members).Error
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to list namespace members", c.Path()))
+	}
+	return c.JSON(NamespaceMembersResponse{Data: members})
+}
+
 // PostCfgNamespaceInviteHandler
 // @Summary ネームスペースへユーザーを招待する
 // @Description ネームスペースに指定したメールアドレスのユーザーを招待し、権限を付与する
@@ -309,6 +357,8 @@ func (con *Controller) PostCfgNamespaceInviteHandler(c fiber.Ctx) error {
 	if err := c.Bind().Body(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid Request", fiber.StatusBadRequest, "Invalid request body", c.Path()))
 	}
+	req.Email = strings.TrimSpace(req.Email)
+	req.GrantType = strings.TrimSpace(req.GrantType)
 	if !validEmail(req.Email) || (req.GrantType != "r" && req.GrantType != "w" && req.GrantType != "rw" && req.GrantType != "admin") {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid invitation", fiber.StatusUnprocessableEntity, "a valid email and grant_type r, w, rw, or admin are required", c.Path()))
 	}
@@ -321,6 +371,9 @@ func (con *Controller) PostCfgNamespaceInviteHandler(c fiber.Ctx) error {
 			return c.Status(fiber.StatusNotFound).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "User Not Found", fiber.StatusNotFound, "Target user not found", c.Path()))
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to lookup user", c.Path()))
+	}
+	if targetUser.ID == userID && req.GrantType != "admin" {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid invitation", fiber.StatusUnprocessableEntity, "administrators cannot remove their own admin permission", c.Path()))
 	}
 
 	err = conn.PermitUserToAccessNamespace(userID.String(), targetUser.ID.String(), namespace.String(), req.GrantType)
@@ -368,6 +421,7 @@ func (con *Controller) PostCfgNamespaceDisinviteHandler(c fiber.Ctx) error {
 	if err := c.Bind().Body(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid Request", fiber.StatusBadRequest, "Invalid request body", c.Path()))
 	}
+	req.Email = strings.TrimSpace(req.Email)
 	if !validEmail(req.Email) {
 		return c.Status(fiber.StatusUnprocessableEntity).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid email", fiber.StatusUnprocessableEntity, "a valid email is required", c.Path()))
 	}
@@ -386,9 +440,16 @@ func (con *Controller) PostCfgNamespaceDisinviteHandler(c fiber.Ctx) error {
 		}
 		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to lookup user", c.Path()))
 	}
+	if targetUser.ID == userID {
+		return c.Status(fiber.StatusUnprocessableEntity).JSON(lib.NewRFCErrorResponse(lib.ErrorInvalidRequest, "Invalid member", fiber.StatusUnprocessableEntity, "administrators cannot remove themselves", c.Path()))
+	}
 
-	if err := con.DB.Where("namespace_id = ? AND user_id = ?", namespace, targetUser.ID).Delete(&lib.NamespaceAccessPermission{}).Error; err != nil {
+	result := con.DB.Where("namespace_id = ? AND user_id = ?", namespace, targetUser.ID).Delete(&lib.NamespaceAccessPermission{})
+	if result.Error != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(lib.NewRFCErrorResponse(lib.ErrorDatabaseError, "DB Error", fiber.StatusInternalServerError, "Failed to disinvite user", c.Path()))
+	}
+	if result.RowsAffected != 1 {
+		return c.Status(fiber.StatusNotFound).JSON(lib.NewRFCErrorResponse(lib.ErrorCommonNotFound, "Member Not Found", fiber.StatusNotFound, "Target user is not a namespace member", c.Path()))
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
