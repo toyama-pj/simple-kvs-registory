@@ -47,6 +47,7 @@ func MigrateSchema(db *gorm.DB) error {
 		model interface{}
 		field string
 	}{
+		{&User{}, "PasswordHash"},
 		{&UserBearerToken{}, "TokenHash"},
 		{&WriteAccessToken{}, "TokenHash"},
 		{&AccessLog{}, "Actor"},

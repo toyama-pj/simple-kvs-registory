@@ -67,10 +67,13 @@ func TestDataCursorRoundTrip(t *testing.T) {
 }
 
 func TestSanitizeAccessLogBody(t *testing.T) {
-	body := map[string]interface{}{"email": "user@example.com", "code": "123456"}
+	body := map[string]interface{}{"email": "user@example.com", "code": "123456", "current_password": "old", "new_password": "new"}
 	sanitized := sanitizeAccessLogBody("/api/v1/auth/login/callback", body).(map[string]interface{})
 	if sanitized["code"] != "[REDACTED]" {
 		t.Fatalf("code was not redacted: %#v", sanitized)
+	}
+	if sanitized["current_password"] != "[REDACTED]" || sanitized["new_password"] != "[REDACTED]" {
+		t.Fatalf("passwords were not redacted: %#v", sanitized)
 	}
 
 	data := sanitizeAccessLogBody("/api/v1/data/00000000-0000-0000-0000-000000000000", map[string]interface{}{"value": "secret"}).(map[string]interface{})

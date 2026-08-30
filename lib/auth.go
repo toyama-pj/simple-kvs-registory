@@ -18,12 +18,13 @@ var (
 )
 
 type User struct {
-	ID        uuid.UUID      `gorm:"primaryKey;type:uuid;column:id"`
-	Name      string         `gorm:"type:varchar;column:name"`
-	Email     string         `gorm:"type:varchar;column:email;uniqueIndex"`
-	CreatedAt time.Time      `gorm:"type:timestamptz;column:created_at"`
-	UpdatedAt time.Time      `gorm:"type:timestamptz;column:updated_at"`
-	DeletedAt gorm.DeletedAt `json:"-" swaggerignore:"true"`
+	ID           uuid.UUID      `gorm:"primaryKey;type:uuid;column:id"`
+	Name         string         `gorm:"type:varchar;column:name"`
+	Email        string         `gorm:"type:varchar;column:email;uniqueIndex"`
+	PasswordHash string         `gorm:"type:text;column:password_hash" json:"-" swaggerignore:"true"`
+	CreatedAt    time.Time      `gorm:"type:timestamptz;column:created_at"`
+	UpdatedAt    time.Time      `gorm:"type:timestamptz;column:updated_at"`
+	DeletedAt    gorm.DeletedAt `json:"-" swaggerignore:"true"`
 }
 
 type UserRegistration struct {

@@ -64,7 +64,7 @@ func sanitizeAccessLogBody(path string, body interface{}) interface{} {
 	if !ok {
 		return body
 	}
-	for _, key := range []string{"code", "token", "password", "app_s_key", "nwk_s_key"} {
+	for _, key := range []string{"code", "token", "password", "current_password", "new_password", "app_s_key", "nwk_s_key"} {
 		if _, exists := values[key]; exists {
 			values[key] = "[REDACTED]"
 		}

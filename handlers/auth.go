@@ -34,6 +34,9 @@ func (cont *Controller) ReturnLibController() *lib.Controller {
 func (cont *Controller) AuthHandlersSetup(router fiber.Router) {
 	router.Post("/login", cont.authIPLimiter(5), cont.authEmailLimiter(5), cont.PostLoginOneTimeCodeHandler)
 	router.Post("/login/callback", cont.authIPLimiter(5), cont.authEmailLimiter(5), cont.PostLoginHandler)
+	router.Post("/password/login", cont.authIPLimiter(5), cont.authEmailLimiter(5), cont.PostPasswordLoginHandler)
+	router.Get("/password", cont.AuthenticationMiddlewareHandler, cont.GetPasswordStatusHandler)
+	router.Put("/password", cont.AuthenticationMiddlewareHandler, cont.PutPasswordHandler)
 	router.Post("/register", cont.authIPLimiter(3), cont.authEmailLimiter(3), cont.PostRegisterHandler)
 	router.Post("/register/callback", cont.authIPLimiter(5), cont.authEmailLimiter(5), cont.PostRegisterCallbackHandler)
 	router.Post("/logout", cont.AuthenticationMiddlewareHandler, cont.PostLogoutHandler)
