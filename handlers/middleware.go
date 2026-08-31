@@ -113,29 +113,25 @@ func (con *Controller) AuthenticationMiddlewareHandler(c fiber.Ctx) error {
 	tokenHash := lib.HashToken(tokenString)
 	err := con.DB.Where("token_hash = ? OR token = ?", tokenHash, tokenString).Where("expires_at > ?", time.Now()).Where("deleted_at IS NULL").First(&tokenRecord).Error
 	if err == nil {
-		newExpiry := time.Now().Add(time.Hour * 24)
-		updates := map[string]interface{}{"expires_at": newExpiry}
 		if tokenRecord.TokenHash == "" {
 			// Transparently migrate legacy plaintext credentials after a valid use.
-			updates["token_hash"] = tokenHash
-			updates["token"] = ""
-		}
-		err = con.DB.Model(&lib.UserBearerToken{}).Where("id = ?", tokenRecord.ID).Updates(updates).Error
-		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(
-				lib.NewRFCErrorResponse(
-					lib.ErrorDatabaseError,
-					"Database Error",
-					fiber.StatusInternalServerError,
-					"failed to update authorization token.",
-					c.Path(),
-				),
-			)
+			err = con.DB.Model(&lib.UserBearerToken{}).Where("id = ? AND token_hash = ''", tokenRecord.ID).Updates(map[string]interface{}{"token_hash": tokenHash, "token": ""}).Error
+			if err != nil {
+				return c.Status(fiber.StatusInternalServerError).JSON(
+					lib.NewRFCErrorResponse(
+						lib.ErrorDatabaseError,
+						"Database Error",
+						fiber.StatusInternalServerError,
+						"failed to migrate authorization token.",
+						c.Path(),
+					),
+				)
+			}
 		}
 		c.Locals("userId", tokenRecord.UserID)
 		c.Locals("userBearerTokenId", tokenRecord.ID)
 		if usingCookie {
-			con.setSessionCookie(c, tokenString, newExpiry)
+			con.setSessionCookie(c, tokenString, tokenRecord.ExpiresAt)
 		}
 		return c.Next()
 	}

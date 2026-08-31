@@ -117,7 +117,14 @@ func TestSessionCookieAuthenticatesAndLogoutRevokesToken(t *testing.T) {
 		t.Fatalf("cookie auth status = %d", response.StatusCode)
 	}
 	if setCookie := response.Header.Get("Set-Cookie"); !strings.Contains(setCookie, "HttpOnly") || !strings.Contains(setCookie, "SameSite=Strict") {
-		t.Fatalf("refreshed cookie = %q", setCookie)
+		t.Fatalf("session cookie = %q", setCookie)
+	}
+	var authenticatedToken lib.UserBearerToken
+	if err := db.First(&authenticatedToken, "id = ?", token.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !authenticatedToken.ExpiresAt.Equal(token.ExpiresAt) {
+		t.Fatalf("authentication extended token expiry from %v to %v", token.ExpiresAt, authenticatedToken.ExpiresAt)
 	}
 
 	logout := httptest.NewRequest("POST", "/api/v1/auth/logout", nil)
