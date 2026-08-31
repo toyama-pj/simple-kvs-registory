@@ -415,7 +415,7 @@ func (c *Controller) PermitUserToAccessNamespace(doAsUserId string, targetUserId
 			GrantType:   grantType,
 			CreatedAt:   time.Now(),
 		}
-		err = c.DB.Create(target).Error
+		err = c.DB.Create(&target).Error
 		if err != nil {
 			return err
 		}
