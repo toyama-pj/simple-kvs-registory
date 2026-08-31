@@ -32,7 +32,7 @@ docker compose up --build
 
 公開ポートは Web API の TCP `3000` と Semtech UDP の UDP `1700` です。Compose は PostgreSQL 16 を起動し、アプリの接続先を自動的に `db:5432` へ上書きします。
 
-ブラウザで `http://localhost:3000/` を開くと、ログイン、Namespaceごとの計測値閲覧、Device追加、パスキー管理を行える簡易Web UIを利用できます。UIはFiberから静的配信されるHTML/CSS/JavaScriptで、フロントエンドのビルド工程や外部CDNはありません。
+ブラウザで `http://localhost:3000/` を開くと、ログイン、Namespaceごとの計測値閲覧、Device追加、Namespaceユーザー招待、パスワード・パスキー管理を行える簡易Web UIを利用できます。UIはFiberから静的配信されるHTML/CSS/JavaScriptで、フロントエンドのビルド工程や外部CDNはありません。
 
 ローカルで直接起動する場合は `.env` の `DATABASE_DSN` をローカル PostgreSQL に合わせ、次を実行します。
 
@@ -54,7 +54,9 @@ make run
 
 ## ログインとパスキー
 
-初回はメールアドレス宛ての6桁コードで登録またはログインします。ブラウザUIのセッションはHttpOnly・SameSite=Strict Cookieで保持され、ログアウト時にはサーバー側のBearer Tokenも失効します。APIクライアント向けには、従来どおりログイン応答のBearer Tokenも返します。
+初回はメールアドレス宛ての6桁コードで登録またはログインします。ログイン後にアカウント設定からパスワードを設定すると、以降はメールアドレスとパスワードでもログインできます。パスワードはユーザーごとのランダムsaltを用いたArgon2idでハッシュ化し、平文では保存しません。パスワード変更時には、操作中のセッションを除く同一ユーザーのセッションが失効します。
+
+ブラウザUIのセッションはHttpOnly・SameSite=Strict Cookieで保持され、ログアウト時にはサーバー側のBearer Tokenも失効します。APIクライアント向けには、ログイン応答のBearer Tokenも返します。
 
 ログイン後の「パスキー」画面で端末のパスキーを登録すると、次回からメールアドレスなしでログインできます。パスキーを有効にする場合は次を設定してください。
 
@@ -71,6 +73,8 @@ make run
 | Method | Path | 用途 |
 | --- | --- | --- |
 | `POST` | `/auth/login`, `/auth/login/callback` | メールコードの発行・ログイン |
+| `POST` | `/auth/password/login` | パスワードログイン |
+| `GET`, `PUT` | `/auth/password` | パスワード設定状態・設定／変更 |
 | `POST` | `/auth/passkeys/login/begin`, `/auth/passkeys/login/finish` | パスキーログイン |
 | `POST` | `/auth/passkeys/register/begin`, `/auth/passkeys/register/finish` | パスキー登録 |
 | `GET`, `DELETE` | `/auth/passkeys`, `/auth/passkeys/{id}` | パスキー一覧・削除 |
@@ -81,6 +85,8 @@ make run
 | `POST` | `/namespaces/{id}/devices` | Device とセッションキー登録 |
 | `GET` | `/namespaces/{id}/devices` | Device 一覧 |
 | `GET` | `/namespaces/{id}/measurements` | Namespace の計測値取得 |
+| `GET` | `/cfg/{id}/members` | Namespaceユーザー一覧（管理者のみ） |
+| `POST` | `/cfg/{id}/invite`, `/cfg/{id}/disinvite` | Namespace招待・権限更新・削除 |
 | `GET` | `/devices/{id}` | Device 取得 |
 | `PATCH` | `/devices/{id}` | Device 名・有効状態・セッションキー更新 |
 | `DELETE` | `/devices/{id}` | Device 無効化・削除 |

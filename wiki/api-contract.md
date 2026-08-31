@@ -14,6 +14,12 @@ User Bearer Tokens can use configuration APIs and the data operations allowed by
 
 The browser UI also receives the same user session in an HttpOnly, SameSite=Strict cookie. Cookie authentication never applies to WriteAccessTokens. `POST /auth/logout` revokes the current database token and clears the cookie; API clients may continue to use the returned Bearer token in the Authorization header.
 
+### Passwords
+
+An authenticated user can set a first password or change an existing password with `PUT /auth/password`. Changing an existing password requires the current password. A successful update revokes every other Bearer session for that user while retaining the session that performed the change. `POST /auth/password/login` creates the same cookie and Bearer Token session used by OTP and passkey login.
+
+Passwords are stored as salted Argon2id PHC strings using 19 MiB memory, two iterations, and one degree of parallelism. New passwords contain 12–128 Unicode characters. Password fields are redacted from access logs.
+
 ### Passkeys
 
 Passkey registration requires an already authenticated user and uses:
@@ -38,6 +44,7 @@ Authentication endpoints are limited independently per source IP and per normali
 | --- | ---: | ---: |
 | `POST /auth/login` | 10 minutes | 5 |
 | `POST /auth/login/callback` | 10 minutes | 5 |
+| `POST /auth/password/login` | 10 minutes | 5 |
 | `POST /auth/register` | 10 minutes | 3 |
 | `POST /auth/register/callback` | 10 minutes | 5 |
 
@@ -72,6 +79,8 @@ Namespace grants have these exact meanings:
 | `admin` | yes | yes | yes |
 
 The database enforces one grant for each namespace/user pair.
+
+Namespace administrators can list members with `GET /cfg/{namespace}/members`, invite a registered user or update their grant with `POST /cfg/{namespace}/invite`, and remove a member with `POST /cfg/{namespace}/disinvite`. Administrators cannot demote or remove themselves through these endpoints, preventing an accidental loss of all management access.
 
 On upgrade, startup adds the new hash/audit columns and uniqueness indexes without running a full DuckDB table alteration. If an older database already contains duplicate namespace/user grants, reconcile those rows before upgrading; migration deliberately fails instead of choosing an arbitrary permission.
 
